@@ -474,7 +474,9 @@ export class RubiksCube extends THREE.Group {
     const turn = this.liveTurn ?? this.activeTurn;
     if (turn === null || !this.sliceOutline.group.visible) return;
     _qAxis.setFromAxisAngle(AXIS_VECTORS[turn.axis], turn.current);
-    this.sliceOutline.group.quaternion.copy(this._sliceBaseQuat).multiply(_qAxis);
+    // rot * base (rotation applied in the cube frame first), matching how the
+    // slice's cubies are oriented — so the frame spins around the turn axis
+    this.sliceOutline.group.quaternion.copy(_qAxis).multiply(this._sliceBaseQuat);
   }
 
   hideSliceOutline(): void {

@@ -233,20 +233,29 @@ renderer.setAnimationLoop((time) => {
     // hitbox hint, distance-based: far away the cube's edges glow with a neon
     // pulse (only while pointing at it); close up the targeted cubie is outlined
     // and the whole cube glows when within direct-grab range
+    // hitbox hint, distance-based: far away the cube's edges glow with a neon
+    // pulse (only while pointing near it); within 1 m aiming at the cube shows
+    // the targeted cubie + the whole cube. While a face is being turned only
+    // that face + the box stay highlighted (no full-cube glow).
     cube.clearHighlights();
     for (const source of controllerSources) {
       if (!source) continue;
       const dist = source.pinchPoint.distanceTo(cube.getWorldPosition(_cubeCenter));
       if (dist <= 1.0) {
-        if (source.beamCubie) cube.showCubieOutline(source.beamCubie);
-        if (dist < 0.4) cube.setGlow(0.6);
-      } else if (source.aimingAtCube) {
+        if (source.beamCubie) {
+          cube.showCubieOutline(source.beamCubie);
+          if (activeSlice === null) cube.setGlow(0.6);
+        }
+      } else if (source.aimingAtCube && activeSlice === null) {
         cube.setGlow(0.7 + 0.25 * Math.sin(time * 0.006)); // neon pulse
       }
     }
 
-    // VR menu: the ☰ menu button (left controller) toggles it; beam + trigger
-    // on a button activates it. (Left trigger on empty space also toggles.)
+    // VR menu: the ☰ menu button (left controller) toggles it; the left
+    // controller's beam drives the hover (with a short settle so it doesn't
+    // look "preselected" the moment the menu opens); trigger on a button activates.
+    let hoverAction: 'scramble' | 'reset' | 'undo' | null = null;
+    let hoverTicks = 0;
     for (let i = 0; i < controllerSources.length; i++) {
       const source = controllerSources[i];
       if (!source) continue;
@@ -257,16 +266,25 @@ renderer.setAnimationLoop((time) => {
       const menuJustPressed = menuPressed && !prevMenu[i];
       prevMenu[i] = menuPressed;
 
-      const hovered = vrMenu.isOpen ? vrMenu.actionFor(source.castBeam(vrMenu.buttonMeshes)?.object ?? null) : null;
-      if (vrMenu.isOpen) vrMenu.setHovered(hovered);
+      if (vrMenu.isOpen && i === 0) {
+        const hit = vrMenu.actionFor(source.castBeam(vrMenu.buttonMeshes)?.object ?? null);
+        if (hit === hoverAction) hoverTicks++;
+        else {
+          hoverAction = hit;
+          hoverTicks = 0;
+        }
+      }
 
       if (menuJustPressed && i === 0) {
         vrMenu.isOpen ? vrMenu.close() : vrMenu.open(camera);
       }
       if (justPressed) {
         if (vrMenu.isOpen) {
-          if (hovered !== null) {
-            activateMenu(hovered);
+          // only activate a button once its hover has settled (avoids
+          // accidental activation while the beam is still moving)
+          const settled = hoverTicks > 4 ? hoverAction : null;
+          if (settled !== null) {
+            activateMenu(settled);
           } else if (i === 0) {
             vrMenu.close();
           }
@@ -275,6 +293,8 @@ renderer.setAnimationLoop((time) => {
         }
       }
     }
+    // apply the settled hover to the menu visuals
+    if (vrMenu.isOpen) vrMenu.setHovered(hoverTicks > 4 ? hoverAction : null);
   }
   checkSolved();
   renderer.render(scene, camera);
