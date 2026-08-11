@@ -389,15 +389,6 @@ export class RubiksCube extends THREE.Group {
     }
   }
 
-  /** Animated solve: replay the inverse of every move in history. */
-  solve(): void {
-    if (this.liveTurn !== null || this.isAnimating()) return;
-    while (this.history.length > 0) {
-      const m = this.history.pop()!;
-      this.queueTurn(m.axis, m.layer, -m.dir, 12, false);
-    }
-  }
-
   /** Is every face a single solid colour? */
   isSolved(): boolean {
     const signAxes: AxisIndex[] = [0, 1, 2];
