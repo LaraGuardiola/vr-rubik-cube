@@ -65,7 +65,13 @@ export class ControllerSource implements PinchSource {
   private stickX = 0;
   private stickY = 0;
 
-  constructor(grip: THREE.Group, ray: THREE.Group, private cube: RubiksCube) {
+  constructor(
+    grip: THREE.Group,
+    ray: THREE.Group,
+    private cube: RubiksCube,
+    private handedness: 'left' | 'right',
+    private getSession: () => XRSession | null,
+  ) {
     this.grip = grip;
     this.ray = ray;
 
@@ -75,6 +81,10 @@ export class ControllerSource implements PinchSource {
     gripEvents.addEventListener('squeezestart', () => this.setSqueeze(true));
     gripEvents.addEventListener('squeezeend', () => this.setSqueeze(false));
     gripEvents.addEventListener('connected', (e) => {
+      this.inputSource = (e as unknown as { data?: XRInputSource }).data ?? null;
+    });
+    const rayEvents = ray as unknown as THREE.EventDispatcher<Record<string, unknown>>;
+    rayEvents.addEventListener('connected', (e) => {
       this.inputSource = (e as unknown as { data?: XRInputSource }).data ?? null;
     });
 
@@ -160,8 +170,18 @@ export class ControllerSource implements PinchSource {
     _dir.set(0, 0, -1).applyQuaternion(this.ray.getWorldQuaternion(_q));
     _perp.subVectors(this.pinchPoint, _center).cross(_dir);
     const perpDist = _perp.length();
-    this.nearCube = this.pinchPoint.distanceTo(_center) < PROXIMITY;
-    this.aimingAtCube = this.pinchPoint.distanceTo(_center) < 1.0 || perpDist < AIM_CONE;
+    const scale = this.cube.scale.x; // hitbox radii scale with the cube's size
+    const tipDist = this.pinchPoint.distanceTo(_center);
+    this.nearCube = tipDist < PROXIMITY * scale;
+    this.aimingAtCube = tipDist < 1.0 || perpDist < AIM_CONE * scale;
+
+    // fallback: find our input source by handedness if 'connected' was missed
+    if (this.inputSource === null) {
+      const session = this.getSession();
+      if (session) {
+        this.inputSource = (session.inputSources as XRInputSource[]).find((s) => s.handedness === this.handedness) ?? null;
+      }
+    }
 
     // beam length: stop at the cube surface when pointing at it
     const tracked = this.ray.visible || this.grip.visible;

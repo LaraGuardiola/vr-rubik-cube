@@ -149,7 +149,13 @@ function attachInputSources(): void {
     if (!grip.parent) scene.add(grip);
     if (!ray.parent) scene.add(ray);
     if (controllerSources[i] === undefined) {
-      const source = new ControllerSource(grip, ray, cube);
+      const source = new ControllerSource(
+        grip,
+        ray,
+        cube,
+        i === 0 ? 'left' : 'right',
+        () => renderer.xr.getSession(),
+      );
       controllerSources[i] = source;
       xrControls.attach(source);
     }
