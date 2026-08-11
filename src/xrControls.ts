@@ -19,7 +19,7 @@ import type { PinchSource } from './hands';
 // ignored until it releases).
 // ---------------------------------------------------------------------------
 
-const GRAB_RADIUS = 0.09; // metres around the pinch point that counts as "touching a cubie"
+const GRAB_RADIUS = 0.055; // metres around the pinch point that counts as "touching a cubie"
 const AXIS_CHOOSE_THRESHOLD = 0.12; // radians of hand motion before an ambiguous axis is chosen
 
 const _q = new THREE.Quaternion();

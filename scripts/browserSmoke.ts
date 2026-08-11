@@ -55,7 +55,7 @@ const center = await page.evaluate(() => {
   const p = w.__cubeDebug.getWorldPosition(new w.THREE.Vector3()).project(w.__camera);
   return { x: rect.left + (p.x * 0.5 + 0.5) * rect.width, y: rect.top + (-p.y * 0.5 + 0.5) * rect.height };
 });
-const R = 40;
+const R = 15; // small enough to stay inside the (now small) cube's screen footprint
 const N = 24;
 const pts: Array<[number, number]> = [];
 for (let i = 0; i <= N; i++) {

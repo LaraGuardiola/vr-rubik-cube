@@ -15,10 +15,10 @@ import { RubiksCube, type AxisIndex } from './cube';
 // axis-aligned in world space until the player drags it around in VR.
 // ---------------------------------------------------------------------------
 
-const TURN_SPHERE_RADIUS = 0.35; // metres — sphere used to track pointer angle during a turn
+const TURN_SPHERE_RADIUS = 0.26; // metres — sphere used to track pointer angle during a turn
 const ORBIT_SENSITIVITY = 0.008;
-const MIN_RADIUS = 0.9;
-const MAX_RADIUS = 7;
+const MIN_RADIUS = 0.7;
+const MAX_RADIUS = 6;
 
 function wrapAngle(a: number): number {
   return Math.atan2(Math.sin(a), Math.cos(a));
@@ -42,7 +42,7 @@ export class DesktopControls {
 
   private orbitTheta = 0;
   private orbitPhi = 0.29;
-  private orbitRadius = 2.8;
+  private orbitRadius = 2.0;
 
   private raycaster = new THREE.Raycaster();
   private ndc = new THREE.Vector2();
@@ -88,7 +88,7 @@ export class DesktopControls {
   resetView(): void {
     this.orbitTheta = 0;
     this.orbitPhi = 0.29;
-    this.orbitRadius = 2.8;
+    this.orbitRadius = 2.0;
   }
 
   // ------------------------------------------------------------- event wiring

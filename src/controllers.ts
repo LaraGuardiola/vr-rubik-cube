@@ -16,11 +16,11 @@ import type { PinchSource } from './hands';
 // "hitbox" hint.
 // ---------------------------------------------------------------------------
 
-const RAY_LENGTH = 1.2; // beam length when it doesn't hit the cube
+const RAY_LENGTH = 1.0; // beam length when it doesn't hit the cube
 const BODY_LEN = 0.16;
 const BODY_R = 0.02;
 const TIP_R = 0.022;
-const PROXIMITY = 0.35; // tip-to-cube-centre distance that turns on the whole-cube glow
+const PROXIMITY = 0.25; // tip-to-cube-centre distance that turns on the whole-cube glow
 
 const _q = new THREE.Quaternion();
 const _q2 = new THREE.Quaternion();
@@ -122,6 +122,23 @@ export class ControllerSource implements PinchSource {
       const len = pick ? Math.max(0.05, Math.min(pick.distance, RAY_LENGTH)) : RAY_LENGTH;
       this.beam.scale.set(1, 1, len);
       this.beam.position.z = -len / 2;
+    }
+
+    // WebXR only fires start/end events for select/squeeze (no stream while
+    // held), so we poll the "move" callbacks every frame while a button is down.
+    if (this.pinching) this.onPinchMove?.();
+    if (this.grabbing) this.onGrabMove?.();
+
+    // safety: if tracking is lost mid-grab, release cleanly
+    if (!tracked) {
+      if (this.pinching) {
+        this.pinching = false;
+        this.onPinchEnd?.();
+      }
+      if (this.grabbing) {
+        this.grabbing = false;
+        this.onGrabEnd?.();
+      }
     }
   }
 
