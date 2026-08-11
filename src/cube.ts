@@ -185,6 +185,7 @@ export class RubiksCube extends THREE.Group {
   private cubieOutline: ReturnType<typeof buildBoxFrame>; // around one highlighted cubie
   private sliceOutline: ReturnType<typeof buildRectFrame>; // around the face being turned
   private _qSlice = new THREE.Quaternion();
+  private _sliceBaseQuat = new THREE.Quaternion();
 
   constructor() {
     super();
@@ -303,6 +304,7 @@ export class RubiksCube extends THREE.Group {
   // -------------------------------------------------------------- animation
 
   update(dt: number): void {
+    this.applySliceRotation(); // keep the "turning face" outline rotating with the slice
     if (this.liveTurn !== null) return; // live turns are driven by input
     if (this.activeTurn === null && this.queue.length > 0) {
       const next = this.queue.shift()!;
@@ -452,17 +454,27 @@ export class RubiksCube extends THREE.Group {
     this.cubieOutline.group.visible = false;
   }
 
-  /** Outline the face/slice currently being turned (0 = off). */
+  /** Outline the face/slice currently being turned (0 = off). The frame is
+   * centred in the slice plane (like the middle layer) and rotates with the
+   * slice as it turns. */
   showSliceOutline(axis: AxisIndex, layer: number, intensity = 0.9): void {
     // orient the frame's normal (+Z) along the axis
     if (axis === 0) this._qSlice.setFromAxisAngle(AXIS_VECTORS[1], Math.PI / 2);
     else if (axis === 1) this._qSlice.setFromAxisAngle(AXIS_VECTORS[0], -Math.PI / 2);
     else this._qSlice.identity();
-    this.sliceOutline.group.quaternion.copy(this._qSlice);
-    const pos = (layer + Math.sign(layer) * 0.5) * CUBIE_SIZE;
+    this._sliceBaseQuat.copy(this._qSlice);
+    const pos = layer * CUBIE_SIZE; // centred in the slice, matching the middle layer
     this.sliceOutline.group.position.set(axis === 0 ? pos : 0, axis === 1 ? pos : 0, axis === 2 ? pos : 0);
+    this.sliceOutline.group.quaternion.copy(this._sliceBaseQuat);
     this.sliceOutline.material.opacity = THREE.MathUtils.clamp(intensity, 0, 1) * 0.9;
     this.sliceOutline.group.visible = true;
+  }
+
+  private applySliceRotation(): void {
+    const turn = this.liveTurn ?? this.activeTurn;
+    if (turn === null || !this.sliceOutline.group.visible) return;
+    _qAxis.setFromAxisAngle(AXIS_VECTORS[turn.axis], turn.current);
+    this.sliceOutline.group.quaternion.copy(this._sliceBaseQuat).multiply(_qAxis);
   }
 
   hideSliceOutline(): void {
