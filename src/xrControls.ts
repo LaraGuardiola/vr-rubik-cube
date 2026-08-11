@@ -68,6 +68,9 @@ interface ScaleGrab {
   source: PinchSource;
   startDist: number;
   startScale: number;
+  startCenter: THREE.Vector3; // cube centre at scale start
+  anchorDir: THREE.Vector3; // direction from the holding hand to the cube centre
+  startHalf: number; // cube half-extent at scale start (world units)
 }
 
 export class XRControls {
@@ -113,7 +116,8 @@ export class XRControls {
     } else {
       // hand: cubies near the index pinch
       this.cube.updateMatrixWorld(true);
-      const found = this.cube.cubieAt(source.pinchPoint, GRAB_RADIUS);
+      const grabRadius = GRAB_RADIUS * this.cube.scale.x; // hitbox scales with the cube
+      const found = this.cube.cubieAt(source.pinchPoint, grabRadius);
       if (found.length === 0) return;
 
       const common = [new Set<number>(), new Set<number>(), new Set<number>()];
@@ -168,12 +172,12 @@ export class XRControls {
       const sx = source.thumbstick.x;
       const sy = source.thumbstick.y;
       if (!g.liveStarted) {
-        if (Math.abs(sy) > 0.25) this.beginLayerTurn(1); // Y axis (up/down)
-        else if (Math.abs(sx) > 0.25) this.beginLayerTurn(0); // X axis (left/right)
+        if (Math.abs(sy) > 0.2) this.beginLayerTurn(1); // Y axis (up/down)
+        else if (Math.abs(sx) > 0.2) this.beginLayerTurn(0); // X axis (left/right)
       }
       if (g.axis !== null) {
         const stick = g.axis === 1 ? sy : g.axis === 0 ? sx : 0;
-        if (Math.abs(stick) > 0.1) {
+        if (Math.abs(stick) > 0.08) {
           this.cube.setLiveAngle(stick * (Math.PI / 2));
           return; // stick drives the angle this frame
         }
@@ -220,14 +224,20 @@ export class XRControls {
 
     // If a whole-cube grab is already active, a second grab becomes a
     // RESIZE gesture: stretch the hands apart to enlarge, together to shrink.
-    if (this.wholeGrab !== null) {
+    if (this.wholeGrab !== null && this.wholeSource !== null) {
       this.cube.updateMatrixWorld(true);
       this.cube.getWorldPosition(_center);
       if (this.scaleGrab === null && source.palmPos.distanceTo(_center) <= 0.7) {
+        const dir = _d.copy(_center).sub(this.wholeSource.palmPos);
+        if (dir.lengthSq() < 1e-6) dir.set(0, 0, 1);
+        dir.normalize();
         this.scaleGrab = {
           source,
           startDist: Math.max(0.05, source.palmPos.distanceTo(_center)),
           startScale: this.cube.scale.x,
+          startCenter: _center.clone(),
+          anchorDir: dir.clone(),
+          startHalf: this.cube.scale.x * CUBIE_SIZE * 1.5,
         };
       }
       return;
@@ -238,7 +248,10 @@ export class XRControls {
     this.cube.getWorldPosition(_center);
     let canGrab: boolean;
     if (source.pickCubie) {
-      canGrab = source.aimingAtCube ?? false;
+      const dist = source.pinchPoint.distanceTo(_center);
+      // within 1 m you must point at the cube (or basically touch it); from
+      // farther away, aiming the beam near it is enough (gravity-pull range)
+      canGrab = dist <= 1.0 ? (source.pickCubie() !== null || (source.nearCube ?? false)) : (source.aimingAtCube ?? false);
     } else {
       canGrab = source.pinchPoint.distanceTo(_center) <= HAND_REACH;
     }
@@ -314,6 +327,14 @@ export class XRControls {
     _v.copy(w.cubePos0).sub(w.handPos0).applyQuaternion(_q);
     this.cube.position.copy(source.palmPos).add(_v);
     this.cube.quaternion.copy(_q).multiply(w.cubeQuat0);
+
+    // while resizing, keep the held side of the cube stationary so it grows
+    // away from the holding hand instead of from its centre
+    if (this.scaleGrab !== null) {
+      const g = this.scaleGrab;
+      const newHalf = g.startHalf * (this.cube.scale.x / g.startScale);
+      this.cube.position.addScaledVector(g.anchorDir, newHalf - g.startHalf);
+    }
   }
 
   private onGrabEnd(source: PinchSource): void {
