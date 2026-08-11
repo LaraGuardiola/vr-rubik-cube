@@ -129,6 +129,12 @@ settle(cube);
 check('snap-back returns to solved', cube.isSolved());
 check('snap-back records no move', cube.history.length === 0);
 
+console.log('— cancel live turn (joystick axis switch) —');
+cube.beginLiveTurn(2, 1);
+cube.setLiveAngle(Math.PI * 0.3);
+cube.cancelLiveTurn();
+check('cancel restores the slice', cube.isSolved() && !cube.isAnimating());
+
 console.log('');
 if (failures === 0) {
   console.log('ALL PASS');

@@ -167,17 +167,26 @@ export class XRControls {
     const local = this.cube.worldToLocal(source.pinchPoint.clone());
 
     // thumbstick: while holding a piece, up/down → vertical axis, left/right →
-    // horizontal axis, and the deflection drives the turn angle
+    // horizontal axis, and the deflection drives the turn angle. The stick
+    // OVERRIDES any axis already chosen by hand motion (so the stick is never
+    // "dead" just because motion grabbed the Z axis first).
     if (source.thumbstick) {
       const sx = source.thumbstick.x;
       const sy = source.thumbstick.y;
-      if (!g.liveStarted) {
-        if (Math.abs(sy) > 0.2) this.beginLayerTurn(1); // Y axis (up/down)
-        else if (Math.abs(sx) > 0.2) this.beginLayerTurn(0); // X axis (left/right)
-      }
-      if (g.axis !== null) {
-        const stick = g.axis === 1 ? sy : g.axis === 0 ? sx : 0;
-        if (Math.abs(stick) > 0.08) {
+      const stickMag = Math.max(Math.abs(sx), Math.abs(sy));
+      if (stickMag > 0.2) {
+        const stickAxis: AxisIndex = Math.abs(sy) >= Math.abs(sx) ? 1 : 0;
+        const stick = stickAxis === 1 ? sy : sx;
+        if (g.liveStarted && g.axis !== stickAxis) {
+          // restart cleanly on the stick axis
+          this.cube.cancelLiveTurn();
+          g.liveStarted = false;
+          g.axis = null;
+          g.layer = null;
+          g.baseAngle[stickAxis] = angleAround(this.cube.worldToLocal(source.pinchPoint.clone()), stickAxis);
+        }
+        if (!g.liveStarted) this.beginLayerTurn(stickAxis);
+        if (g.axis === stickAxis) {
           this.cube.setLiveAngle(stick * (Math.PI / 2));
           return; // stick drives the angle this frame
         }

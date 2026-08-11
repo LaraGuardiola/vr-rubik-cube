@@ -309,6 +309,13 @@ export class RubiksCube extends THREE.Group {
     this.liveTurn = null;
   }
 
+  /** Cancel an in-progress live turn, restoring the slice (no move recorded). */
+  cancelLiveTurn(): void {
+    if (this.liveTurn === null) return;
+    this.applyTurn(this.liveTurn, 0);
+    this.liveTurn = null;
+  }
+
   // -------------------------------------------------------------- animation
 
   update(dt: number): void {

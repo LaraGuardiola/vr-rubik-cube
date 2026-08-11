@@ -77,6 +77,10 @@ export class ControllerSource implements PinchSource {
     gripEvents.addEventListener('connected', (e) => {
       this.inputSource = (e as unknown as { data?: XRInputSource }).data ?? null;
     });
+    const rayEvents = ray as unknown as THREE.EventDispatcher<Record<string, unknown>>;
+    rayEvents.addEventListener('connected', (e) => {
+      this.inputSource = (e as unknown as { data?: XRInputSource }).data ?? null;
+    });
 
     // --- procedural controller visual --------------------------------------
     const bodyMat = new THREE.MeshStandardMaterial({ color: 0x2a2d35, roughness: 0.35, metalness: 0.6 });
