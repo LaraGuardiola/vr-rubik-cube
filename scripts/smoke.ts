@@ -120,6 +120,15 @@ check('reset to solved', cube.isSolved());
 check('history cleared', cube.history.length === 0);
 check('27 cubies after reset', cube.cubies.length === 27);
 
+console.log('— snap-back animation (<45° release) —');
+cube.beginLiveTurn(1, 1);
+cube.setLiveAngle(Math.PI * 0.2); // ~36° — below the commit threshold
+cube.endLiveTurn();
+check('snap-back queues an animated turn', cube.isAnimating());
+settle(cube);
+check('snap-back returns to solved', cube.isSolved());
+check('snap-back records no move', cube.history.length === 0);
+
 console.log('');
 if (failures === 0) {
   console.log('ALL PASS');

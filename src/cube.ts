@@ -283,8 +283,16 @@ export class RubiksCube extends THREE.Group {
     const live = this.liveTurn;
     const snapped = Math.round(live.current / (Math.PI / 2)) * (Math.PI / 2);
     if (Math.abs(snapped) < 0.001) {
-      // ended where it started — restore the slice and cancel
-      this.applyTurn(live, 0);
+      // ended near the start — ease back smoothly to 0 (no move recorded)
+      this.queue.push({
+        axis: live.axis,
+        layer: live.layer,
+        current: live.current,
+        target: 0,
+        speed: 10,
+        record: false,
+        snapshot: live.snapshot,
+      });
       this.liveTurn = null;
       return;
     }
