@@ -1,6 +1,8 @@
 node_modules/
-dist/
 *.log
 screenshot*.png
 .vite/
 .DS_Store
+# dist/ is a legacy build location; the current build outputs to docs/ which
+# IS committed (GitHub Pages deploys it directly from the main branch).
+dist/

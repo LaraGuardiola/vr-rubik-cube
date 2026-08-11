@@ -35,8 +35,8 @@ bun run dev          # start Vite dev server over plain HTTP (easiest for testin
 bun run dev:host     # same, explicitly binds to the LAN (http://<your-lan-ip>:5173)
 bun run dev:https    # HTTPS variant (self-signed cert via @vitejs/plugin-basic-ssl) — WebXR on remote devices
 bun run dev:host:https # HTTPS variant, explicitly bound to the LAN
-bun run build        # typecheck (tsc --noEmit) + production build into dist/
-bun run preview      # serve the built dist/ locally
+bun run build        # typecheck (tsc --noEmit) + production build into docs/
+bun run preview      # serve the built docs/ locally
 bun run typecheck    # tsc --noEmit only
 bun run smoke        # headless logic test of the cube mechanics (no browser needed)
 bun run browser:smoke# headless-Chromium test of the live app (requires `bun run dev` running)
@@ -107,10 +107,13 @@ Flat module layout in `src/` — deliberately small, no framework.
 
 ## Hosting on GitHub Pages (HTTPS → WebXR works)
 
-The production build uses **relative asset paths** (`base: './'`), so the `dist/` output works under any URL path — including a GitHub Pages **project site** at `https://<user>.github.io/<repo>/`. HTTPS is a secure context, so WebXR (hand tracking, AR/VR) works from a headset with no cert hassles.
+The production build uses **relative asset paths** (`base: './'`) and outputs to **`docs/`** (`build.outDir`), so GitHub Pages can serve the built app directly from the `main` branch — no Actions workflow needed. HTTPS is a secure context, so WebXR (hand tracking, AR/VR) works from a headset with no cert hassles.
 
-- Push to GitHub, then enable **Settings → Pages → Source: GitHub Actions** once. A workflow (`.github/workflows/deploy.yml`) builds with Bun and deploys `dist/` to Pages on every push to `main`.
-- Open the provided `https://<user>.github.io/<repo>/` URL in the Quest 2 browser.
+- Run `bun run build`, commit the resulting `docs/` folder, and push to `main`.
+- In **Settings → Pages → Build and deployment → Source**: choose **"Deploy from a branch"**, branch **`main`**, folder **`/docs`**.
+- GitHub re-publishes the site on every push to `main` automatically.
+- Open `https://<user>.github.io/<repo>/` in the Quest 2 browser.
+- A CI workflow (`.github/workflows/ci.yml`) typechecks and builds on every push so the `docs/` output is validated before it's served. (An older artifact-based deploy workflow was replaced by this — the branch `/docs` approach is deterministic and needs no per-run setup.)
 - If you host at a custom domain or as a `username.github.io` user site, `base: './'` still resolves correctly (no config change needed).
 
 ## Known limitations & suggested next steps

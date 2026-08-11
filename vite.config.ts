@@ -20,5 +20,8 @@ export default defineConfig({
   base: './',
   build: {
     target: 'es2022',
+    // Output to docs/ so GitHub Pages can deploy it directly from the main
+    // branch ("Deploy from a branch" → folder /docs) — no Actions needed.
+    outDir: 'docs',
   },
 });
