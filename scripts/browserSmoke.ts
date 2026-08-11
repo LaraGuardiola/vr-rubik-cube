@@ -41,7 +41,7 @@ const moveCount = async () =>
     return c ? c.history.length : -1;
   })) as number;
 
-// 1. drag on the cube (a circular sweep around its projected centre) → a layer turn
+// 1. drag on the cube (a horizontal sweep across its front) → a layer turn
 interface PageDebug {
   THREE: typeof import('three');
   __cubeDebug: { history: unknown[] };
@@ -55,19 +55,14 @@ const center = await page.evaluate(() => {
   const p = w.__cubeDebug.getWorldPosition(new w.THREE.Vector3()).project(w.__camera);
   return { x: rect.left + (p.x * 0.5 + 0.5) * rect.width, y: rect.top + (-p.y * 0.5 + 0.5) * rect.height };
 });
-const R = 15; // small enough to stay inside the (now small) cube's screen footprint
-const N = 24;
-const pts: Array<[number, number]> = [];
-for (let i = 0; i <= N; i++) {
-  const a = Math.PI * 0.75 + (i / N) * Math.PI * 1.5;
-  pts.push([center.x + R * Math.cos(a), center.y + R * Math.sin(a)]);
-}
 let dragTried = 0;
-while ((await moveCount()) === 0 && dragTried < 2) {
+while ((await moveCount()) === 0 && dragTried < 3) {
   dragTried++;
-  await page.mouse.move(pts[0][0], pts[0][1]);
+  const startX = center.x - 15; // on the cube's front face
+  const endX = center.x + 60; // sweep right, off the cube (sphere tracking continues)
+  await page.mouse.move(startX, center.y);
   await page.mouse.down();
-  for (const [x, y] of pts) await page.mouse.move(x, y, { steps: 1 });
+  await page.mouse.move(endX, center.y, { steps: 15 });
   await page.mouse.up();
   await new Promise((r) => setTimeout(r, 1500));
 }

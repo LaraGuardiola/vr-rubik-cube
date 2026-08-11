@@ -1,30 +1,34 @@
 import * as THREE from 'three';
-import { RubiksCube, CUBIE_SIZE, type AxisIndex } from './cube';
+import { RubiksCube, CUBIE_SIZE, pickTurnAxis, type AxisIndex } from './cube';
 import type { PinchSource } from './hands';
 
 // ---------------------------------------------------------------------------
 // VR grab interactions (shared by hand tracking and Quest controllers).
 //
-// Two explicit gestures, same on hands and controllers:
-//  1. LAYER TURN  — hands: index-finger pinch (thumb↔index) on a face;
-//                   controllers: aim the laser at a face and pull the trigger.
-//                   While held, the slice follows the grab point's orbit around
-//                   the slice axis; on release the cube snaps to 90°.
-//  2. WHOLE-CUBE  — hands: middle-finger pinch (thumb↔middle) anywhere;
-//                   controllers: grip (squeeze) button.
-//                   The cube stays glued to the hand/controller pose and floats
-//                   where it is released (no gravity).
+// LAYER TURN — index-finger pinch (hands) on a face, or aim + trigger
+// (controllers). The slice axis is chosen from the DIRECTION of the grab
+// point's motion: the axis whose rotation best follows the drag (see
+// pickTurnAxis), so grabbing any cubie and dragging in any direction turns the
+// matching layer (drag left↔right → around the vertical axis, etc.).
 //
-// Only one interaction is active at a time (first grabber wins; others are
-// ignored until it releases).
+// WHOLE-CUBE — middle-finger pinch (hands) near the cube, or grip (controllers)
+// while pointing at the cube. If the grab point is far away the cube is
+// "gravity pulled" to the hand (Half-Life: Alyx style); once close it locks on
+// and follows the hand rigidly, then floats where released (no gravity).
+//
+// Only one interaction is active at a time.
 // ---------------------------------------------------------------------------
 
-const GRAB_RADIUS = 0.055; // metres around the pinch point that counts as "touching a cubie"
-const AXIS_CHOOSE_THRESHOLD = 0.12; // radians of hand motion before an ambiguous axis is chosen
+const GRAB_RADIUS = 0.055; // metres around a pinch point that counts as "touching a cubie"
+const HAND_REACH = 0.6; // hands: middle pinch must be within this of the cube centre to grab
+const HOLD_DIST = 0.12; // gravity pull locks on when the cube centre is this close to the hand
+const PULL_SPEED = 10; // per-second ease rate of the gravity pull
 
 const _q = new THREE.Quaternion();
 const _q2 = new THREE.Quaternion();
 const _v = new THREE.Vector3();
+const _center = new THREE.Vector3();
+const _d = new THREE.Vector3();
 
 /** Angle of a cube-local point around an axis, in radians, matching the right-hand rule. */
 function angleAround(p: THREE.Vector3, axis: AxisIndex): number {
@@ -37,11 +41,12 @@ function wrapAngle(a: number): number {
 }
 
 interface LayerGrab {
-  cubies: { logical: THREE.Vector3 }[] | null; // null for controller (ray) picks
-  candidates: AxisIndex[] | null; // null for controller picks (axis known immediately)
+  cubies: { logical: THREE.Vector3 }[];
+  cubiePosLocal: THREE.Vector3; // grabbed cubie's cube-local position
+  basePoint: THREE.Vector3; // world grab point at grab start
   axis: AxisIndex | null;
   layer: number | null;
-  baseAngle: number[]; // per-axis base angle at grab start
+  baseAngle: number[]; // per-axis angle at grab start
   liveStarted: boolean;
 }
 
@@ -50,6 +55,7 @@ interface WholeGrab {
   handQuat0: THREE.Quaternion;
   cubePos0: THREE.Vector3;
   cubeQuat0: THREE.Quaternion;
+  pulling: boolean; // true while the cube flies to the hand (gravity pull)
 }
 
 export class XRControls {
@@ -57,8 +63,14 @@ export class XRControls {
   private layerSource: PinchSource | null = null;
   private wholeGrab: WholeGrab | null = null;
   private wholeSource: PinchSource | null = null;
+  private _dt = 0.016;
 
   constructor(private cube: RubiksCube) {}
+
+  /** Call every frame with the frame delta; used by the gravity pull easing. */
+  update(dt: number): void {
+    this._dt = dt;
+  }
 
   attach(source: PinchSource): void {
     source.onPinchStart = () => this.onPinchStart(source);
@@ -74,69 +86,57 @@ export class XRControls {
   private onPinchStart(source: PinchSource): void {
     if (this.layerGrab !== null || this.wholeGrab !== null) return; // busy
 
-    // controller laser → pick the exact slice under the beam
-    if (source.pickSlice) {
-      const picked = source.pickSlice();
-      if (picked && this.cube.beginLiveTurn(picked.axis, picked.layer)) {
-        const local = this.cube.worldToLocal(source.pinchPoint.clone());
-        const baseAngle = [0, 0, 0];
-        baseAngle[picked.axis] = angleAround(local, picked.axis);
-        this.layerGrab = {
-          cubies: null,
-          candidates: null,
-          axis: picked.axis,
-          layer: picked.layer,
-          baseAngle,
-          liveStarted: true,
-        };
-        this.layerSource = source;
-      }
-      return;
-    }
+    let cubie: { logical: THREE.Vector3 } | null = null;
 
-    // hand tracking → proximity grab with the index finger
-    this.cube.updateMatrixWorld(true);
-    const point = source.pinchPoint.clone();
-    const found = this.cube.cubieAt(point, GRAB_RADIUS);
-    if (found.length === 0) return;
+    if (source.pickCubie) {
+      // controller: the cubie under the laser
+      cubie = source.pickCubie();
+      if (cubie === null) return;
+    } else {
+      // hand: cubies near the index pinch
+      this.cube.updateMatrixWorld(true);
+      const found = this.cube.cubieAt(source.pinchPoint, GRAB_RADIUS);
+      if (found.length === 0) return;
 
-    // Which slices do the grabbed cubies share?
-    const common = [new Set<number>(), new Set<number>(), new Set<number>()];
-    for (const c of found) {
-      for (let a = 0; a < 3; a++) common[a].add(c.logical.getComponent(a));
-    }
-    let candidates: AxisIndex[] = [];
-    for (let a = 0; a < 3; a++) {
-      if (common[a].size === 1) candidates.push(a as AxisIndex);
-    }
-    if (candidates.length === 0) {
-      // Grabbed cubies span several slices (e.g. a corner) — use the closest
-      // cubie and let hand motion pick the axis.
-      let closest = found[0];
-      let bestD = Infinity;
+      const common = [new Set<number>(), new Set<number>(), new Set<number>()];
       for (const c of found) {
-        const d = point.distanceTo(c.logical.clone().multiplyScalar(CUBIE_SIZE));
-        if (d < bestD) {
-          bestD = d;
-          closest = c;
-        }
+        for (let a = 0; a < 3; a++) common[a].add(c.logical.getComponent(a));
       }
-      candidates = [0, 1, 2];
-      found.length = 0;
-      found.push(closest);
+      let candidates: AxisIndex[] = [];
+      for (let a = 0; a < 3; a++) {
+        if (common[a].size === 1) candidates.push(a as AxisIndex);
+      }
+      if (candidates.length === 0) {
+        // grabbed cubies span several slices — use the closest one
+        let closest = found[0];
+        let bestD = Infinity;
+        for (const c of found) {
+          const dd = source.pinchPoint.distanceTo(c.logical.clone().multiplyScalar(CUBIE_SIZE));
+          if (dd < bestD) {
+            bestD = dd;
+            closest = c;
+          }
+        }
+        found.length = 0;
+        found.push(closest);
+      }
+      cubie = found[0];
     }
 
-    const local = this.cube.worldToLocal(point.clone());
+    const local = this.cube.worldToLocal(source.pinchPoint.clone());
     const baseAngle = [0, 0, 0];
-    for (const a of candidates) baseAngle[a] = angleAround(local, a);
+    for (let a = 0; a < 3; a++) baseAngle[a] = angleAround(local, a as AxisIndex);
 
-    this.layerGrab = { cubies: found, candidates, axis: null, layer: null, baseAngle, liveStarted: false };
+    this.layerGrab = {
+      cubies: [cubie],
+      cubiePosLocal: cubie.logical.clone().multiplyScalar(CUBIE_SIZE),
+      basePoint: source.pinchPoint.clone(),
+      axis: null,
+      layer: null,
+      baseAngle,
+      liveStarted: false,
+    };
     this.layerSource = source;
-
-    if (candidates.length === 1) {
-      this.beginLayerTurn(candidates[0]);
-    }
-    // otherwise the axis is chosen from hand motion in onPinchMove
   }
 
   private onPinchMove(source: PinchSource): void {
@@ -144,18 +144,13 @@ export class XRControls {
     const g = this.layerGrab;
     const local = this.cube.worldToLocal(source.pinchPoint.clone());
 
-    if (g.candidates !== null && !g.liveStarted) {
-      // ambiguous grab (hands): pick the axis with the most motion so far
-      let bestAxis = g.candidates[0];
-      let bestDelta = 0;
-      for (const a of g.candidates) {
-        const delta = Math.abs(wrapAngle(angleAround(local, a) - g.baseAngle[a]));
-        if (delta > bestDelta) {
-          bestDelta = delta;
-          bestAxis = a;
-        }
-      }
-      if (bestDelta > AXIS_CHOOSE_THRESHOLD) this.beginLayerTurn(bestAxis);
+    if (!g.liveStarted) {
+      // choose the axis whose rotation best follows the drag direction
+      _d.copy(source.pinchPoint).sub(g.basePoint); // world drag
+      this.cube.getWorldQuaternion(_q2).invert();
+      _d.applyQuaternion(_q2); // → cube-local
+      const axis = pickTurnAxis(g.cubiePosLocal, _d);
+      if (axis !== null) this.beginLayerTurn(axis);
     }
 
     if (g.axis !== null) {
@@ -173,7 +168,7 @@ export class XRControls {
 
   private beginLayerTurn(axis: AxisIndex): void {
     const g = this.layerGrab;
-    if (g === null || g.liveStarted || g.cubies === null || g.cubies.length === 0) return;
+    if (g === null || g.liveStarted || g.cubies.length === 0) return;
     const layer = g.cubies[0].logical.getComponent(axis);
     if (this.cube.beginLiveTurn(axis, layer)) {
       g.axis = axis;
@@ -186,12 +181,50 @@ export class XRControls {
 
   private onGrabStart(source: PinchSource): void {
     if (this.layerGrab !== null || this.wholeGrab !== null) return; // busy
-    this.startWhole(source);
+
+    // must actually be pointing at / reaching for the cube — no accidental grabs
+    this.cube.updateMatrixWorld(true);
+    this.cube.getWorldPosition(_center);
+    let canGrab: boolean;
+    if (source.pickCubie) {
+      canGrab = source.pickCubie() !== null || (source.nearCube ?? false);
+    } else {
+      canGrab = source.pinchPoint.distanceTo(_center) <= HAND_REACH;
+    }
+    if (!canGrab) return;
+
+    this.cube.getWorldPosition(_center);
+    const distToHand = source.palmPos.distanceTo(_center);
+    this.wholeGrab = {
+      handPos0: source.palmPos.clone(),
+      handQuat0: source.palmQuat.clone(),
+      cubePos0: this.cube.getWorldPosition(new THREE.Vector3()),
+      cubeQuat0: this.cube.getWorldQuaternion(new THREE.Quaternion()),
+      pulling: distToHand > HOLD_DIST,
+    };
+    this.wholeSource = source;
   }
 
   private onGrabMove(source: PinchSource): void {
     if (this.wholeSource !== source || this.wholeGrab === null) return;
     const w = this.wholeGrab;
+
+    if (w.pulling) {
+      // gravity pull: fly toward the hand, easing position + orientation
+      const step = Math.min(1, this._dt * PULL_SPEED);
+      this.cube.position.lerp(source.palmPos, step);
+      this.cube.quaternion.slerp(source.palmQuat, step);
+      if (this.cube.position.distanceTo(source.palmPos) < HOLD_DIST) {
+        // locked on → rigid attachment from here
+        w.pulling = false;
+        w.handPos0.copy(source.palmPos);
+        w.handQuat0.copy(source.palmQuat);
+        w.cubePos0.copy(this.cube.position);
+        w.cubeQuat0.copy(this.cube.quaternion);
+      }
+      return;
+    }
+
     // R = handQuat * inv(handQuat0); cube rigidly attached to the hand
     _q.copy(source.palmQuat).multiply(_q2.copy(w.handQuat0).invert());
     _v.copy(w.cubePos0).sub(w.handPos0).applyQuaternion(_q);
@@ -203,16 +236,5 @@ export class XRControls {
     if (this.wholeSource !== source || this.wholeGrab === null) return;
     this.wholeGrab = null;
     this.wholeSource = null;
-  }
-
-  private startWhole(source: PinchSource): void {
-    this.cube.updateMatrixWorld(true);
-    this.wholeGrab = {
-      handPos0: source.palmPos.clone(),
-      handQuat0: source.palmQuat.clone(),
-      cubePos0: this.cube.getWorldPosition(new THREE.Vector3()),
-      cubeQuat0: this.cube.getWorldQuaternion(new THREE.Quaternion()),
-    };
-    this.wholeSource = source;
   }
 }

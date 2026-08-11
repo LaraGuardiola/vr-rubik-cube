@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { RubiksCube, type AxisIndex, type Cubie } from './cube';
+import { RubiksCube, type Cubie } from './cube';
 import type { PinchSource } from './hands';
 
 // ---------------------------------------------------------------------------
@@ -23,16 +23,12 @@ const TIP_R = 0.022;
 const PROXIMITY = 0.25; // tip-to-cube-centre distance that turns on the whole-cube glow
 
 const _q = new THREE.Quaternion();
-const _q2 = new THREE.Quaternion();
 const _dir = new THREE.Vector3();
-const _normal = new THREE.Vector3();
 const _center = new THREE.Vector3();
 
 interface SlicePick {
-  axis: AxisIndex;
-  layer: number;
-  distance: number;
   cubie: Cubie;
+  distance: number;
 }
 
 export class ControllerSource implements PinchSource {
@@ -97,10 +93,7 @@ export class ControllerSource implements PinchSource {
     ray.add(this.beam);
   }
 
-  pickSlice = (): { axis: AxisIndex; layer: number } | null => {
-    const pick = this.pickSliceFromRay();
-    return pick ? { axis: pick.axis, layer: pick.layer } : null;
-  };
+  pickCubie = (): Cubie | null => this.pickSliceFromRay()?.cubie ?? null;
 
   /** Call every frame while an XR session is active. */
   update(): void {
@@ -175,25 +168,9 @@ export class ControllerSource implements PinchSource {
     const hits = this.raycaster.intersectObjects(targets, true);
     if (hits.length === 0) return null;
     const hit = hits[0];
-    const face = hit.face;
-    if (!face) return null;
     const cubieMesh = (hit.object as THREE.Mesh).parent as THREE.Group;
     const cubie = this.cube.cubies.find((c) => c.mesh === cubieMesh);
     if (!cubie) return null;
-
-    // face normal → cube-local axis
-    _normal.copy(face.normal).transformDirection((hit.object as THREE.Mesh).matrixWorld);
-    _normal.applyQuaternion(this.cube.getWorldQuaternion(_q2).invert());
-    let axis: AxisIndex = 0;
-    let best = -1;
-    for (const a of [0, 1, 2] as AxisIndex[]) {
-      const v = Math.abs(_normal.getComponent(a));
-      if (v > best) {
-        best = v;
-        axis = a;
-      }
-    }
-    const layer = cubie.logical.getComponent(axis);
-    return { axis, layer, distance: hit.distance, cubie };
+    return { cubie, distance: hit.distance };
   }
 }

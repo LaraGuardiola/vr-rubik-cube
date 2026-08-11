@@ -158,6 +158,35 @@ interface SliceTurn {
 }
 
 const _qAxis = new THREE.Quaternion();
+const _cross = new THREE.Vector3();
+
+/**
+ * Pick which cube axis a slice should turn around given the grabbed cubie's
+ * position and the drag direction (both in cube-local space). Returns the axis
+ * whose rotation best follows the drag — i.e. the A maximising (A × r̂) · d̂, so
+ * dragging left↔right turns around the vertical axis, up↔down around a
+ * horizontal one, etc. Returns null when the drag isn't a clear rotation.
+ */
+export function pickTurnAxis(cubiePosLocal: THREE.Vector3, dragDirLocal: THREE.Vector3): AxisIndex | null {
+  const r = cubiePosLocal.clone();
+  if (r.lengthSq() < 1e-9) return null;
+  r.normalize();
+  const d = dragDirLocal.clone();
+  if (d.lengthSq() < 1e-9) return null;
+  d.normalize();
+
+  let best: AxisIndex | null = null;
+  let bestScore = 0.3; // min tangential alignment to consider the drag a rotation
+  for (const a of [0, 1, 2] as AxisIndex[]) {
+    _cross.crossVectors(AXIS_VECTORS[a], r);
+    const score = _cross.dot(d);
+    if (score > bestScore) {
+      bestScore = score;
+      best = a;
+    }
+  }
+  return best;
+}
 
 export class RubiksCube extends THREE.Group {
   cubies: Cubie[] = [];
@@ -167,9 +196,27 @@ export class RubiksCube extends THREE.Group {
   history: MoveRecord[] = [];
   onMove: ((move: MoveRecord) => void) | null = null;
 
+  // Blue edge outline used as the "hitbox" highlight (glows only the cube's edges).
+  private outline: THREE.LineSegments;
+  private readonly outlineMat = new THREE.LineBasicMaterial({
+    color: 0x3d7bff,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+
   constructor() {
     super();
+    this.outline = this.buildOutline();
+    this.add(this.outline);
     this.buildSolved();
+  }
+
+  private buildOutline(): THREE.LineSegments {
+    const edge = CUBIE_SIZE * 3 * 1.03;
+    const geo = new THREE.EdgesGeometry(new THREE.BoxGeometry(edge, edge, edge));
+    return new THREE.LineSegments(geo, this.outlineMat);
   }
 
   buildSolved(): void {
@@ -188,6 +235,8 @@ export class RubiksCube extends THREE.Group {
         }
       }
     }
+    this.outline = this.buildOutline();
+    this.add(this.outline);
   }
 
   isAnimating(): boolean {
@@ -393,14 +442,17 @@ export class RubiksCube extends THREE.Group {
     return this.cubies.filter((c) => c.logical.getComponent(axis) === layer);
   }
 
-  /** Turn the whole-cube blue "hitbox" glow on/off (used for controller proximity). */
+  /** Blue "hitbox" glow on the cube's edges (0 = off). */
   setGlow(intensity: number): void {
-    for (const c of this.cubies) c.setHighlight(intensity);
+    const o = THREE.MathUtils.clamp(intensity, 0, 1);
+    this.outlineMat.opacity = o * 0.9;
+    this.outline.visible = o > 0.01;
   }
 
-  /** Clear all per-cubie highlights (call once per frame before applying new ones). */
+  /** Clear all per-cubie highlights + edge glow (call once per frame). */
   clearHighlights(): void {
     for (const c of this.cubies) c.setHighlight(0);
+    this.setGlow(0);
   }
 
   /** True if any cubie mesh lies within `radius` of `point` (world space). */

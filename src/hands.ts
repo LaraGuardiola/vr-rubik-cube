@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { AxisIndex } from './cube';
+import type { Cubie } from './cube';
 
 // ---------------------------------------------------------------------------
 // Pinch sources.
@@ -20,10 +20,12 @@ export interface PinchSource {
   /** World-space "hand"/grip orientation. */
   palmQuat: THREE.Quaternion;
   /**
-   * If present, called at pinch start to pick an exact slice via a ray
-   * (controller laser). Returns null when the ray misses the cube.
+   * If present (controllers), called to pick the cubie currently under the
+   * laser. Returns null when the beam misses the cube.
    */
-  pickSlice?: () => { axis: AxisIndex; layer: number } | null;
+  pickCubie?: () => Cubie | null;
+  /** True when the grab point is close enough to the cube to grab it (controllers). */
+  nearCube?: boolean;
   // "layer" channel — index-finger pinch (hands) or trigger (controllers)
   onPinchStart: (() => void) | null;
   onPinchMove: (() => void) | null;

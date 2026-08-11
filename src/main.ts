@@ -193,19 +193,19 @@ renderer.setAnimationLoop((time) => {
   cube.update(dt);
   desktopControls.update();
   if (renderer.xr.isPresenting) {
+    xrControls.update(dt);
     for (const rig of handRigs) {
       if (rig) rig.update();
     }
     for (const source of controllerSources) {
       if (source) source.update();
     }
-    // blue "hitbox" glow: the cubie under a laser + a soft whole-cube glow when
-    // a controller is close enough to grab
+    // blue "hitbox" hint: the cubie under a laser + an edge outline when close
     cube.clearHighlights();
     for (const source of controllerSources) {
       if (!source) continue;
       if (source.beamCubie) source.beamCubie.setHighlight(0.9);
-      if (source.nearCube) cube.setGlow(0.3);
+      if (source.nearCube) cube.setGlow(0.6);
     }
   }
   checkSolved();

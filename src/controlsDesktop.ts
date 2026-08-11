@@ -4,8 +4,9 @@ import { RubiksCube, type AxisIndex } from './cube';
 // ---------------------------------------------------------------------------
 // Desktop (mouse/touch) controls.
 //
-//  * Drag on a cube face   → turns the slice perpendicular to that face. The
-//    pointer's orbit around the slice axis drives the live angle; on release
+//  * Drag on a cube face   → turns the layer under that face. The slice axis is
+//    the face normal; the pointer's orbit around it drives the live angle,
+//    multiplied by TURN_GAIN so even a short drag feels responsive. On release
 //    the layer snaps to the nearest 90deg step.
 //  * Drag on empty space   → orbits the camera around the cube (inspect).
 //    (Shift+drag on the cube also orbits.)
@@ -16,6 +17,7 @@ import { RubiksCube, type AxisIndex } from './cube';
 // ---------------------------------------------------------------------------
 
 const TURN_SPHERE_RADIUS = 0.26; // metres — sphere used to track pointer angle during a turn
+const TURN_GAIN = 7; // scales pointer orbit to turn angle so short drags turn the layer
 const ORBIT_SENSITIVITY = 0.008;
 const MIN_RADIUS = 0.7;
 const MAX_RADIUS = 6;
@@ -140,27 +142,18 @@ export class DesktopControls {
     const wantsOrbit = e.shiftKey || hit === null;
 
     if (wantsOrbit) {
-      this.drag = {
-        mode: 'orbit',
-        axis: 0,
-        layer: 0,
-        baseAngle: 0,
-        lastX: e.clientX,
-        lastY: e.clientY,
-      };
+      this.drag = { mode: 'orbit', axis: 0, layer: 0, baseAngle: 0, lastX: e.clientX, lastY: e.clientY };
       return;
     }
 
-    // start a slice turn
-    const cubie = (hit!.object as THREE.Mesh).parent as THREE.Group;
-    const cubieObj = this.cube.cubies.find((c) => c.mesh === cubie);
+    // start a slice turn — axis = the clicked face's normal
+    const cubieMesh = (hit!.object as THREE.Mesh).parent as THREE.Group;
+    const cubieObj = this.cube.cubies.find((c) => c.mesh === cubieMesh);
     if (cubieObj === undefined) return;
     const face = hit!.face;
     if (!face) return;
 
-    const worldNormal = face.normal
-      .clone()
-      .transformDirection((hit!.object as THREE.Mesh).matrixWorld);
+    const worldNormal = face.normal.clone().transformDirection((hit!.object as THREE.Mesh).matrixWorld);
     const cubeQuatInv = this.cube.getWorldQuaternion(new THREE.Quaternion()).invert();
     const localNormal = worldNormal.applyQuaternion(cubeQuatInv);
 
@@ -176,7 +169,17 @@ export class DesktopControls {
     const layer = cubieObj.logical.getComponent(axis);
     if (!this.cube.beginLiveTurn(axis, layer)) return;
 
-    const local = this.cube.worldToLocal(hit!.point.clone());
+    // base angle from the tracking sphere point (ray already set by raycastCube)
+    const center = this.cube.getWorldPosition(new THREE.Vector3());
+    const t = this.raySphereT(center, TURN_SPHERE_RADIUS);
+    let local: THREE.Vector3;
+    if (t >= 0) {
+      local = this.cube.worldToLocal(
+        this.raycaster.ray.origin.clone().addScaledVector(this.raycaster.ray.direction, t),
+      );
+    } else {
+      local = this.cube.worldToLocal(hit!.point.clone());
+    }
     this.drag = {
       mode: 'turn',
       axis,
@@ -225,7 +228,8 @@ export class DesktopControls {
     const world = this.raycaster.ray.origin.clone().addScaledVector(this.raycaster.ray.direction, t);
     const local = this.cube.worldToLocal(world);
     const angle = angleAround(local, this.drag.axis);
-    this.cube.setLiveAngle(wrapAngle(angle - this.drag.baseAngle));
+    const live = wrapAngle(angle - this.drag.baseAngle) * TURN_GAIN;
+    this.cube.setLiveAngle(THREE.MathUtils.clamp(live, -Math.PI * 1.5, Math.PI * 1.5));
   };
 
   private onPointerUp = (e: PointerEvent): void => {
