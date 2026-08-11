@@ -5,8 +5,9 @@ import { buildRectFrame } from './outline';
 // VR menu — a simple floating 3D panel with Scramble / Reset / Undo buttons.
 // Rendered in the scene (regular DOM can't show inside an immersive session),
 // with canvas-texture labels (procedural, no fonts/asset downloads). Opened by
-// pressing the left controller's trigger on empty space; hovered buttons get a
-// blue outline; trigger on a button activates it.
+// pressing the ☰ menu button on the left controller; hovered buttons light up
+// (a plain blue backing plane + tint — no fragile wireframe); trigger on a
+// button activates it.
 // ---------------------------------------------------------------------------
 
 export type MenuAction = 'scramble' | 'reset' | 'undo';
@@ -43,8 +44,12 @@ function makeLabelTexture(text: string): THREE.CanvasTexture {
 }
 
 export class VRMenu extends THREE.Group {
-  private buttons: { action: MenuAction; mesh: THREE.Mesh; material: THREE.MeshBasicMaterial }[] = [];
-  private hoverFrame: ReturnType<typeof buildRectFrame>;
+  private buttons: {
+    action: MenuAction;
+    mesh: THREE.Mesh;
+    backing: THREE.Mesh;
+    material: THREE.MeshBasicMaterial;
+  }[] = [];
 
   constructor() {
     super();
@@ -59,19 +64,24 @@ export class VRMenu extends THREE.Group {
     border.material.opacity = 0.5;
     this.add(border.group);
 
+    // one shared bright-blue backing material; each button gets its own backing
+    // plane slightly larger than the button, just behind it — on hover the
+    // backing shows as a clean blue border around the (opaque) button. No thin
+    // wireframe bars, so nothing can clip or look broken from any angle.
+    const backingMat = new THREE.MeshBasicMaterial({ color: 0x3d7bff });
     const startY = 0.56 / 2 - BTN_H / 2 - 0.04;
     ACTIONS.forEach((a, i) => {
       const material = new THREE.MeshBasicMaterial({ map: makeLabelTexture(a.label), transparent: true });
+      const y = startY - i * (BTN_H + BTN_GAP);
+      const backing = new THREE.Mesh(new THREE.PlaneGeometry(BTN_W + 0.016, BTN_H + 0.016), backingMat);
+      backing.position.set(0, y, 0.015);
+      backing.visible = false;
+      this.add(backing);
       const mesh = new THREE.Mesh(new THREE.PlaneGeometry(BTN_W, BTN_H), material);
-      mesh.position.set(0, startY - i * (BTN_H + BTN_GAP), 0.02);
+      mesh.position.set(0, y, 0.02);
       this.add(mesh);
-      this.buttons.push({ action: a.action, mesh, material });
+      this.buttons.push({ action: a.action, mesh, backing, material });
     });
-
-    this.hoverFrame = buildRectFrame(BTN_W + 0.02, BTN_H + 0.02, 0.006);
-    this.hoverFrame.material.opacity = 0.9;
-    this.hoverFrame.group.visible = false;
-    this.add(this.hoverFrame.group);
   }
 
   get isOpen(): boolean {
@@ -102,16 +112,10 @@ export class VRMenu extends THREE.Group {
   }
 
   setHovered(action: MenuAction | null): void {
-    // tint buttons back to white
-    for (const b of this.buttons) b.material.color.set(0xffffff);
-    if (action === null) {
-      this.hoverFrame.group.visible = false;
-      return;
+    for (const b of this.buttons) {
+      const on = b.action === action;
+      b.backing.visible = on; // blue border behind the button
+      b.material.color.set(on ? 0xa9c2ff : 0xffffff); // brighten the hovered button
     }
-    const btn = this.buttons.find((b) => b.action === action);
-    if (!btn) return;
-    this.hoverFrame.group.position.copy(btn.mesh.position);
-    this.hoverFrame.group.visible = true;
-    btn.material.color.set(0x9db8ff); // light blue tint on the hovered button
   }
 }

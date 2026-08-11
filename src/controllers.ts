@@ -160,8 +160,10 @@ export class ControllerSource implements PinchSource {
     _dir.set(0, 0, -1).applyQuaternion(this.ray.getWorldQuaternion(_q));
     _perp.subVectors(this.pinchPoint, _center).cross(_dir);
     const perpDist = _perp.length();
-    this.nearCube = this.pinchPoint.distanceTo(_center) < PROXIMITY;
-    this.aimingAtCube = this.pinchPoint.distanceTo(_center) < 1.0 || perpDist < AIM_CONE;
+    const scale = this.cube.scale.x; // hitbox radii scale with the cube's size
+    const tipDist = this.pinchPoint.distanceTo(_center);
+    this.nearCube = tipDist < PROXIMITY * scale;
+    this.aimingAtCube = tipDist < 1.0 || perpDist < AIM_CONE * scale;
 
     // beam length: stop at the cube surface when pointing at it
     const tracked = this.ray.visible || this.grip.visible;
