@@ -214,6 +214,15 @@ renderer.setAnimationLoop((time) => {
   skybox.update(time * 0.001);
   cube.update(dt);
   desktopControls.update();
+  skybox.update(time * 0.001);
+  cube.update(dt);
+  desktopControls.update();
+
+  // outline the face/slice currently being turned (so you can see the axis)
+  const activeSlice = cube.currentSlice();
+  if (activeSlice) cube.showSliceOutline(activeSlice.axis, activeSlice.layer);
+  else cube.hideSliceOutline();
+
   if (renderer.xr.isPresenting) {
     xrControls.update(dt);
     for (const rig of handRigs) {
@@ -223,9 +232,9 @@ renderer.setAnimationLoop((time) => {
       if (source) source.update();
     }
 
-    // blue "hitbox" hint: beyond 1 m only the cube's edges glow (gravity-pull
-    // range); within 1 m the laser-targeted cubie gets its own outline and the
-    // whole cube glows when close enough to grab directly
+    // hitbox hint, distance-based: far away the cube's edges glow with a neon
+    // pulse (only while pointing at it); close up the targeted cubie is outlined
+    // and the whole cube glows when within direct-grab range
     cube.clearHighlights();
     for (const source of controllerSources) {
       if (!source) continue;
@@ -233,8 +242,8 @@ renderer.setAnimationLoop((time) => {
       if (dist <= 1.0) {
         if (source.beamCubie) cube.showCubieOutline(source.beamCubie);
         if (dist < 0.4) cube.setGlow(0.6);
-      } else {
-        cube.setGlow(0.6);
+      } else if (source.aimingAtCube) {
+        cube.setGlow(0.7 + 0.25 * Math.sin(time * 0.006)); // neon pulse
       }
     }
 

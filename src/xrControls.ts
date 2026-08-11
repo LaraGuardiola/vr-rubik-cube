@@ -64,11 +64,18 @@ interface WholeGrab {
   armedPoint: THREE.Vector3; // tip position when the grip was armed
 }
 
+interface ScaleGrab {
+  source: PinchSource;
+  startDist: number;
+  startScale: number;
+}
+
 export class XRControls {
   private layerGrab: LayerGrab | null = null;
   private layerSource: PinchSource | null = null;
   private wholeGrab: WholeGrab | null = null;
   private wholeSource: PinchSource | null = null;
+  private scaleGrab: ScaleGrab | null = null;
   private _dt = 0.016;
 
   constructor(private cube: RubiksCube) {}
@@ -155,6 +162,24 @@ export class XRControls {
     const g = this.layerGrab;
     const local = this.cube.worldToLocal(source.pinchPoint.clone());
 
+    // thumbstick: while holding a piece, up/down → vertical axis, left/right →
+    // horizontal axis, and the deflection drives the turn angle
+    if (source.thumbstick) {
+      const sx = source.thumbstick.x;
+      const sy = source.thumbstick.y;
+      if (!g.liveStarted) {
+        if (Math.abs(sy) > 0.25) this.beginLayerTurn(1); // Y axis (up/down)
+        else if (Math.abs(sx) > 0.25) this.beginLayerTurn(0); // X axis (left/right)
+      }
+      if (g.axis !== null) {
+        const stick = g.axis === 1 ? sy : g.axis === 0 ? sx : 0;
+        if (Math.abs(stick) > 0.1) {
+          this.cube.setLiveAngle(stick * (Math.PI / 2));
+          return; // stick drives the angle this frame
+        }
+      }
+    }
+
     if (!g.liveStarted) {
       // choose the axis whose rotation best follows the drag direction
       _d.copy(source.pinchPoint).sub(g.basePoint); // world drag
@@ -191,14 +216,29 @@ export class XRControls {
   // ----------------------------------------------------------- whole-cube grab
 
   private onGrabStart(source: PinchSource): void {
-    if (this.layerGrab !== null || this.wholeGrab !== null) return; // busy
+    if (this.layerGrab !== null) return; // a layer turn is busy
+
+    // If a whole-cube grab is already active, a second grab becomes a
+    // RESIZE gesture: stretch the hands apart to enlarge, together to shrink.
+    if (this.wholeGrab !== null) {
+      this.cube.updateMatrixWorld(true);
+      this.cube.getWorldPosition(_center);
+      if (this.scaleGrab === null && source.palmPos.distanceTo(_center) <= 0.7) {
+        this.scaleGrab = {
+          source,
+          startDist: Math.max(0.05, source.palmPos.distanceTo(_center)),
+          startScale: this.cube.scale.x,
+        };
+      }
+      return;
+    }
 
     // must actually be pointing at / reaching for the cube — no accidental grabs
     this.cube.updateMatrixWorld(true);
     this.cube.getWorldPosition(_center);
     let canGrab: boolean;
     if (source.pickCubie) {
-      canGrab = source.pickCubie() !== null || (source.nearCube ?? false);
+      canGrab = source.aimingAtCube ?? false;
     } else {
       canGrab = source.pinchPoint.distanceTo(_center) <= HAND_REACH;
     }
@@ -226,6 +266,14 @@ export class XRControls {
   }
 
   private onGrabMove(source: PinchSource): void {
+    // resize gesture: scale the cube by the stretch distance
+    if (this.scaleGrab !== null && this.scaleGrab.source === source) {
+      this.cube.getWorldPosition(_center);
+      const d = source.palmPos.distanceTo(_center);
+      const s = (this.scaleGrab.startScale * d) / this.scaleGrab.startDist;
+      this.cube.scale.setScalar(THREE.MathUtils.clamp(s, 0.4, 3));
+      return;
+    }
     if (this.wholeSource !== source || this.wholeGrab === null) return;
     const w = this.wholeGrab;
 
@@ -269,6 +317,9 @@ export class XRControls {
   }
 
   private onGrabEnd(source: PinchSource): void {
+    if (this.scaleGrab !== null && this.scaleGrab.source === source) {
+      this.scaleGrab = null;
+    }
     if (this.wholeSource !== source || this.wholeGrab === null) return;
     this.wholeGrab = null;
     this.wholeSource = null;

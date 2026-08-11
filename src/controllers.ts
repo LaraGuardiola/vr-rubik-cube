@@ -22,10 +22,12 @@ const BODY_R = 0.02;
 const TIP_R = 0.022;
 const PROXIMITY = 0.25; // tip-to-cube-centre distance that turns on the whole-cube glow
 const HOLD_FORWARD = 0.1; // where a gravity-pulled cube comes to rest, in front of the tip
+const AIM_CONE = 0.45; // how close the laser line must pass to the cube centre to count as "aiming"
 
 const _q = new THREE.Quaternion();
 const _dir = new THREE.Vector3();
 const _center = new THREE.Vector3();
+const _perp = new THREE.Vector3();
 
 interface SlicePick {
   cubie: Cubie;
@@ -51,6 +53,8 @@ export class ControllerSource implements PinchSource {
   beamCubie: Cubie | null = null;
   /** True when the controller tip is close enough to the cube to grab it. */
   nearCube = false;
+  /** True when the laser line passes near the cube (works from far away). */
+  aimingAtCube = false;
 
   pinching = false;
   grabbing = false;
@@ -58,6 +62,8 @@ export class ControllerSource implements PinchSource {
   private beam: THREE.Mesh;
   private inputSource: XRInputSource | null = null;
   private menuDown = false;
+  private stickX = 0;
+  private stickY = 0;
 
   constructor(grip: THREE.Group, ray: THREE.Group, private cube: RubiksCube) {
     this.grip = grip;
@@ -111,6 +117,11 @@ export class ControllerSource implements PinchSource {
     return this.menuDown;
   }
 
+  /** Thumbstick deflection, -1..1 (x: left/right, y: up/down). */
+  get thumbstick(): { x: number; y: number } {
+    return { x: this.stickX, y: this.stickY };
+  }
+
   /** Raycast the laser against arbitrary scene objects (used for the VR menu). */
   castBeam(objects: THREE.Object3D[]): THREE.Intersection | null {
     this.ray.updateMatrixWorld(true);
@@ -136,12 +147,21 @@ export class ControllerSource implements PinchSource {
     this.ray.getWorldPosition(this.pinchPoint);
     this.menuDown = this.readMenuButton();
 
+    const axes = this.inputSource?.gamepad?.axes;
+    this.stickX = axes && axes.length > 0 ? axes[0] : 0;
+    this.stickY = axes && axes.length > 1 ? axes[1] : 0;
+
     const pick = this.pickSliceFromRay();
     this.beamCubie = pick ? pick.cubie : null;
 
+    // "aiming at the cube" = close enough, or the laser line passes near it
     this.cube.updateMatrixWorld(true);
     this.cube.getWorldPosition(_center);
+    _dir.set(0, 0, -1).applyQuaternion(this.ray.getWorldQuaternion(_q));
+    _perp.subVectors(this.pinchPoint, _center).cross(_dir);
+    const perpDist = _perp.length();
     this.nearCube = this.pinchPoint.distanceTo(_center) < PROXIMITY;
+    this.aimingAtCube = this.pinchPoint.distanceTo(_center) < 1.0 || perpDist < AIM_CONE;
 
     // beam length: stop at the cube surface when pointing at it
     const tracked = this.ray.visible || this.grip.visible;

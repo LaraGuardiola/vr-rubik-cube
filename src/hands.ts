@@ -26,6 +26,10 @@ export interface PinchSource {
   pickCubie?: () => Cubie | null;
   /** True when the grab point is close enough to the cube to grab it (controllers). */
   nearCube?: boolean;
+  /** True when the laser line passes near the cube, even from far away. */
+  aimingAtCube?: boolean;
+  /** Thumbstick deflection (controllers), used to drive layer turns. */
+  thumbstick?: { x: number; y: number };
   /** Where a gravity-pulled cube comes to rest (controllers: in front of the tip). */
   getHoldPoint?: (out: THREE.Vector3) => void;
   // "layer" channel — index-finger pinch (hands) or trigger (controllers)

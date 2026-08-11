@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { buildBoxFrame } from './outline';
+import { buildBoxFrame, buildRectFrame } from './outline';
 
 // ---------------------------------------------------------------------------
 // Rubik's Cube model + procedural geometry.
@@ -17,10 +17,11 @@ const HALF = CUBIE_SIZE / 2;
 const STICKER_SIZE = CUBIE_SIZE * 0.8;
 const STICKER_OFFSET = HALF + 0.0015;
 
-// Classic Rubik's colour scheme (standard on Western cubes).
+// Classic Rubik's colour scheme (standard on Western cubes). Orange is tuned
+// brighter so it never reads as red under the scene lights.
 export const COLORS = {
   red: 0xc41e3a,
-  orange: 0xff5800,
+  orange: 0xffa020,
   white: 0xffffff,
   yellow: 0xffd500,
   green: 0x009e60,
@@ -182,14 +183,19 @@ export class RubiksCube extends THREE.Group {
   // Blue edge outlines used as "hitbox" highlights (thick box frames).
   private cubeOutline: ReturnType<typeof buildBoxFrame>; // around the whole cube
   private cubieOutline: ReturnType<typeof buildBoxFrame>; // around one highlighted cubie
+  private sliceOutline: ReturnType<typeof buildRectFrame>; // around the face being turned
+  private _qSlice = new THREE.Quaternion();
 
   constructor() {
     super();
     this.cubeOutline = buildBoxFrame(CUBIE_SIZE * 3 * 1.06, 0.004);
     this.cubieOutline = buildBoxFrame(CUBIE_SIZE * 1.15, 0.003);
+    this.sliceOutline = buildRectFrame(CUBIE_SIZE * 3 * 1.06, CUBIE_SIZE * 3 * 1.06, 0.005);
     this.add(this.cubeOutline.group);
     this.add(this.cubieOutline.group);
+    this.add(this.sliceOutline.group);
     this.cubieOutline.group.visible = false;
+    this.sliceOutline.group.visible = false;
     this.buildSolved();
   }
 
@@ -212,7 +218,9 @@ export class RubiksCube extends THREE.Group {
     // re-attach the highlight frames (buildSolved clears all children)
     this.add(this.cubeOutline.group);
     this.add(this.cubieOutline.group);
+    this.add(this.sliceOutline.group);
     this.cubieOutline.group.visible = false;
+    this.sliceOutline.group.visible = false;
     this.setGlow(0);
   }
 
@@ -442,6 +450,30 @@ export class RubiksCube extends THREE.Group {
   clearHighlights(): void {
     this.setGlow(0);
     this.cubieOutline.group.visible = false;
+  }
+
+  /** Outline the face/slice currently being turned (0 = off). */
+  showSliceOutline(axis: AxisIndex, layer: number, intensity = 0.9): void {
+    // orient the frame's normal (+Z) along the axis
+    if (axis === 0) this._qSlice.setFromAxisAngle(AXIS_VECTORS[1], Math.PI / 2);
+    else if (axis === 1) this._qSlice.setFromAxisAngle(AXIS_VECTORS[0], -Math.PI / 2);
+    else this._qSlice.identity();
+    this.sliceOutline.group.quaternion.copy(this._qSlice);
+    const pos = (layer + Math.sign(layer) * 0.5) * CUBIE_SIZE;
+    this.sliceOutline.group.position.set(axis === 0 ? pos : 0, axis === 1 ? pos : 0, axis === 2 ? pos : 0);
+    this.sliceOutline.material.opacity = THREE.MathUtils.clamp(intensity, 0, 1) * 0.9;
+    this.sliceOutline.group.visible = true;
+  }
+
+  hideSliceOutline(): void {
+    this.sliceOutline.group.visible = false;
+  }
+
+  /** The slice currently being turned (live drag or animating), if any. */
+  currentSlice(): { axis: AxisIndex; layer: number } | null {
+    if (this.liveTurn) return { axis: this.liveTurn.axis, layer: this.liveTurn.layer };
+    if (this.activeTurn) return { axis: this.activeTurn.axis, layer: this.activeTurn.layer };
+    return null;
   }
 
   /** True if any cubie mesh lies within `radius` of `point` (world space). */

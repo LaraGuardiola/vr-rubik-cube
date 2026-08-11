@@ -43,7 +43,7 @@ function makeLabelTexture(text: string): THREE.CanvasTexture {
 }
 
 export class VRMenu extends THREE.Group {
-  private buttons: { action: MenuAction; mesh: THREE.Mesh }[] = [];
+  private buttons: { action: MenuAction; mesh: THREE.Mesh; material: THREE.MeshBasicMaterial }[] = [];
   private hoverFrame: ReturnType<typeof buildRectFrame>;
 
   constructor() {
@@ -61,14 +61,15 @@ export class VRMenu extends THREE.Group {
 
     const startY = 0.56 / 2 - BTN_H / 2 - 0.04;
     ACTIONS.forEach((a, i) => {
-      const mat = new THREE.MeshBasicMaterial({ map: makeLabelTexture(a.label), transparent: true });
-      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(BTN_W, BTN_H), mat);
+      const material = new THREE.MeshBasicMaterial({ map: makeLabelTexture(a.label), transparent: true });
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(BTN_W, BTN_H), material);
       mesh.position.set(0, startY - i * (BTN_H + BTN_GAP), 0.02);
       this.add(mesh);
-      this.buttons.push({ action: a.action, mesh });
+      this.buttons.push({ action: a.action, mesh, material });
     });
 
     this.hoverFrame = buildRectFrame(BTN_W + 0.02, BTN_H + 0.02, 0.006);
+    this.hoverFrame.material.opacity = 0.9;
     this.hoverFrame.group.visible = false;
     this.add(this.hoverFrame.group);
   }
@@ -101,6 +102,8 @@ export class VRMenu extends THREE.Group {
   }
 
   setHovered(action: MenuAction | null): void {
+    // tint buttons back to white
+    for (const b of this.buttons) b.material.color.set(0xffffff);
     if (action === null) {
       this.hoverFrame.group.visible = false;
       return;
@@ -109,5 +112,6 @@ export class VRMenu extends THREE.Group {
     if (!btn) return;
     this.hoverFrame.group.position.copy(btn.mesh.position);
     this.hoverFrame.group.visible = true;
+    btn.material.color.set(0x9db8ff); // light blue tint on the hovered button
   }
 }
