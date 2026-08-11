@@ -26,6 +26,8 @@ export interface PinchSource {
   pickCubie?: () => Cubie | null;
   /** True when the grab point is close enough to the cube to grab it (controllers). */
   nearCube?: boolean;
+  /** Where a gravity-pulled cube comes to rest (controllers: in front of the tip). */
+  getHoldPoint?: (out: THREE.Vector3) => void;
   // "layer" channel — index-finger pinch (hands) or trigger (controllers)
   onPinchStart: (() => void) | null;
   onPinchMove: (() => void) | null;

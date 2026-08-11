@@ -6,6 +6,7 @@ import { HandRig } from './hands';
 import { ControllerSource } from './controllers';
 import { XRControls } from './xrControls';
 import { setupXRButtons } from './xrSession';
+import { VRMenu } from './menu';
 
 // ---------------------------------------------------------------------------
 // Entry point — wires the renderer, scene, cube, skybox, desktop controls,
@@ -74,6 +75,25 @@ const desktopControls = new DesktopControls(container, camera, cube);
 const xrControls = new XRControls(cube);
 const handRigs: HandRig[] = [];
 const controllerSources: ControllerSource[] = [];
+
+// VR floating menu (opened with the left controller's trigger on empty space)
+const vrMenu = new VRMenu();
+scene.add(vrMenu);
+const prevSelect = [false, false];
+
+function activateMenu(action: 'scramble' | 'reset' | 'undo'): void {
+  if (action === 'scramble') {
+    cube.scramble(22);
+    scrambling = true;
+    statusEl.textContent = 'Scrambling…';
+  } else if (action === 'reset') {
+    cube.buildSolved();
+    scrambling = false;
+    statusEl.textContent = 'Solved';
+  } else if (action === 'undo') {
+    cube.undo();
+  }
+}
 
 // -------------------------------------------------------------------- hints
 function setHint(text: string): void {
@@ -148,8 +168,8 @@ void setupXRButtons(renderer, {
       scene.background = null;
     }
     setHint(
-      'HANDS  ·  index pinch = grab & turn a layer\n        ·  middle pinch = grab & move the cube\n' +
-        'CONTROLLERS  ·  aim + trigger = turn layer\n              ·  grip button = move the cube',
+      'LEFT TRIGGER on empty space = menu\nAim + trigger = turn layer (drag direction sets it) · Grip = pull/move cube\n' +
+        'Hands: index = layer · middle = move',
     );
     statusEl.textContent = session.environmentBlendMode === 'additive' ? 'Immersive VR' : 'Immersive AR';
   },
@@ -200,12 +220,41 @@ renderer.setAnimationLoop((time) => {
     for (const source of controllerSources) {
       if (source) source.update();
     }
-    // blue "hitbox" hint: the cubie under a laser + an edge outline when close
+
+    // blue "hitbox" hint: a thick outline around the laser-targeted cubie and
+    // around the cube's edges when a controller is close enough to grab
     cube.clearHighlights();
     for (const source of controllerSources) {
       if (!source) continue;
-      if (source.beamCubie) source.beamCubie.setHighlight(0.9);
+      if (source.beamCubie) cube.showCubieOutline(source.beamCubie);
       if (source.nearCube) cube.setGlow(0.6);
+    }
+
+    // VR menu: left controller's trigger on empty space toggles it; trigger on
+    // a button activates that action
+    if (vrMenu.isOpen) vrMenu.anchorTo(camera);
+    for (let i = 0; i < controllerSources.length; i++) {
+      const source = controllerSources[i];
+      if (!source) continue;
+      const sel = source.selectPressed;
+      const justPressed = sel && !prevSelect[i];
+      prevSelect[i] = sel;
+
+      const hovered = vrMenu.isOpen ? vrMenu.actionFor(source.castBeam(vrMenu.buttonMeshes)?.object ?? null) : null;
+      if (vrMenu.isOpen) vrMenu.setHovered(hovered);
+
+      if (justPressed) {
+        if (vrMenu.isOpen) {
+          if (hovered !== null) {
+            activateMenu(hovered);
+          } else if (i === 0) {
+            // left controller, beam in empty space → close the menu
+            vrMenu.close();
+          }
+        } else if (i === 0 && source.beamCubie === null) {
+          vrMenu.open(camera);
+        }
+      }
     }
   }
   checkSolved();

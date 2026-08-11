@@ -12,23 +12,26 @@ import type { PinchSource } from './hands';
 // matching layer (drag left↔right → around the vertical axis, etc.).
 //
 // WHOLE-CUBE — middle-finger pinch (hands) near the cube, or grip (controllers)
-// while pointing at the cube. If the grab point is far away the cube is
-// "gravity pulled" to the hand (Half-Life: Alyx style); once close it locks on
-// and follows the hand rigidly, then floats where released (no gravity).
+// while pointing at the cube. Controllers must then make a "pull" gesture
+// (yank the controller back away from the cube) to trigger the gravity pull;
+// the cube flies to a hold point in front of the controller (Half-Life: Alyx
+// style), locks on, follows the hand rigidly, then floats where released.
 //
 // Only one interaction is active at a time.
 // ---------------------------------------------------------------------------
 
 const GRAB_RADIUS = 0.055; // metres around a pinch point that counts as "touching a cubie"
 const HAND_REACH = 0.6; // hands: middle pinch must be within this of the cube centre to grab
-const HOLD_DIST = 0.12; // gravity pull locks on when the cube centre is this close to the hand
+const HOLD_DIST = 0.12; // gravity pull locks on when the cube centre is this close to the hold point
 const PULL_SPEED = 10; // per-second ease rate of the gravity pull
+const PULL_TRIGGER = 0.06; // metres the controller must be yanked back before the pull starts
 
 const _q = new THREE.Quaternion();
 const _q2 = new THREE.Quaternion();
 const _v = new THREE.Vector3();
 const _center = new THREE.Vector3();
 const _d = new THREE.Vector3();
+const _hold = new THREE.Vector3();
 
 /** Angle of a cube-local point around an axis, in radians, matching the right-hand rule. */
 function angleAround(p: THREE.Vector3, axis: AxisIndex): number {
@@ -56,6 +59,8 @@ interface WholeGrab {
   cubePos0: THREE.Vector3;
   cubeQuat0: THREE.Quaternion;
   pulling: boolean; // true while the cube flies to the hand (gravity pull)
+  armed: boolean; // controllers: waiting for the "pull" gesture
+  armedPoint: THREE.Vector3; // tip position when the grip was armed
 }
 
 export class XRControls {
@@ -195,12 +200,21 @@ export class XRControls {
 
     this.cube.getWorldPosition(_center);
     const distToHand = source.palmPos.distanceTo(_center);
+
+    // Controllers: holding grip on the cube only "arms" the grab — the gravity
+    // pull needs an explicit pull gesture. Hands: a middle pinch grabs directly.
+    const isController = source.pickCubie !== undefined;
+    const withinHold = distToHand <= HOLD_DIST;
+    const pulling = !isController && !withinHold;
+
     this.wholeGrab = {
       handPos0: source.palmPos.clone(),
       handQuat0: source.palmQuat.clone(),
       cubePos0: this.cube.getWorldPosition(new THREE.Vector3()),
       cubeQuat0: this.cube.getWorldQuaternion(new THREE.Quaternion()),
-      pulling: distToHand > HOLD_DIST,
+      pulling,
+      armed: isController && !withinHold,
+      armedPoint: source.pinchPoint.clone(),
     };
     this.wholeSource = source;
   }
@@ -209,14 +223,30 @@ export class XRControls {
     if (this.wholeSource !== source || this.wholeGrab === null) return;
     const w = this.wholeGrab;
 
+    if (w.armed) {
+      // cube stays put until the player yanks the controller back (away from
+      // the cube) — only then does the gravity pull start
+      this.cube.getWorldPosition(_center);
+      const d0 = w.armedPoint.distanceTo(_center);
+      const d1 = source.pinchPoint.distanceTo(_center);
+      if (d1 - d0 > PULL_TRIGGER) {
+        w.armed = false;
+        w.pulling = true;
+      }
+      return;
+    }
+
     if (w.pulling) {
-      // gravity pull: fly toward the hand, easing position + orientation
+      // gravity pull toward the hold point in front of the hand/controller
+      if (source.getHoldPoint) source.getHoldPoint(_hold);
+      else _hold.copy(source.palmPos);
       const step = Math.min(1, this._dt * PULL_SPEED);
-      this.cube.position.lerp(source.palmPos, step);
+      this.cube.position.lerp(_hold, step);
       this.cube.quaternion.slerp(source.palmQuat, step);
-      if (this.cube.position.distanceTo(source.palmPos) < HOLD_DIST) {
+      if (this.cube.position.distanceTo(_hold) < HOLD_DIST) {
         // locked on → rigid attachment from here
         w.pulling = false;
+        w.armed = false;
         w.handPos0.copy(source.palmPos);
         w.handQuat0.copy(source.palmQuat);
         w.cubePos0.copy(this.cube.position);

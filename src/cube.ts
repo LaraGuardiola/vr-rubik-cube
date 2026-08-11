@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { buildBoxFrame } from './outline';
 
 // ---------------------------------------------------------------------------
 // Rubik's Cube model + procedural geometry.
@@ -90,18 +91,13 @@ export class Cubie {
   logical: THREE.Vector3;
   original: THREE.Vector3; // logical position when the cube was built (solved)
   mesh: THREE.Group;
-  private bodyMat: THREE.MeshStandardMaterial;
-  private stickerMats: THREE.MeshStandardMaterial[] = [];
 
   constructor(x: number, y: number, z: number) {
     this.logical = new THREE.Vector3(x, y, z);
     this.original = new THREE.Vector3(x, y, z);
     this.mesh = new THREE.Group();
 
-    // Per-cubie material clones so individual cubies can be highlighted (blue
-    // "hitbox" glow) without affecting the rest of the cube.
-    this.bodyMat = getBodyMaterial().clone();
-    const body = new THREE.Mesh(new THREE.BoxGeometry(CUBIE_SIZE, CUBIE_SIZE, CUBIE_SIZE), this.bodyMat);
+    const body = new THREE.Mesh(new THREE.BoxGeometry(CUBIE_SIZE, CUBIE_SIZE, CUBIE_SIZE), getBodyMaterial());
     this.mesh.add(body);
 
     const stickerPlane = new THREE.PlaneGeometry(STICKER_SIZE, STICKER_SIZE);
@@ -119,9 +115,7 @@ export class Cubie {
       const coord = this.logical.getComponent(axisOf(face.key));
       const isOnFace = face.key.startsWith('+') ? coord === 1 : coord === -1;
       if (isOnFace) {
-        const mat = getStickerMaterial(FACE_COLOR[face.key]).clone();
-        this.stickerMats.push(mat);
-        const sticker = new THREE.Mesh(stickerPlane, mat);
+        const sticker = new THREE.Mesh(stickerPlane, getStickerMaterial(FACE_COLOR[face.key]));
         sticker.position.copy(face.normal).multiplyScalar(STICKER_OFFSET);
         sticker.lookAt(face.normal);
         this.mesh.add(sticker);
@@ -129,17 +123,6 @@ export class Cubie {
     }
 
     this.mesh.position.set(x * CUBIE_SIZE, y * CUBIE_SIZE, z * CUBIE_SIZE);
-  }
-
-  /** Blue "hitbox" glow. intensity 0 clears it. */
-  setHighlight(intensity: number): void {
-    const i = THREE.MathUtils.clamp(intensity, 0, 1);
-    this.bodyMat.emissive.setRGB(0.12, 0.35, 1);
-    this.bodyMat.emissiveIntensity = i;
-    for (const m of this.stickerMats) {
-      m.emissive.setRGB(0.12, 0.35, 1);
-      m.emissiveIntensity = i;
-    }
   }
 }
 
@@ -196,27 +179,18 @@ export class RubiksCube extends THREE.Group {
   history: MoveRecord[] = [];
   onMove: ((move: MoveRecord) => void) | null = null;
 
-  // Blue edge outline used as the "hitbox" highlight (glows only the cube's edges).
-  private outline: THREE.LineSegments;
-  private readonly outlineMat = new THREE.LineBasicMaterial({
-    color: 0x3d7bff,
-    transparent: true,
-    opacity: 0,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-  });
+  // Blue edge outlines used as "hitbox" highlights (thick box frames).
+  private cubeOutline: ReturnType<typeof buildBoxFrame>; // around the whole cube
+  private cubieOutline: ReturnType<typeof buildBoxFrame>; // around one highlighted cubie
 
   constructor() {
     super();
-    this.outline = this.buildOutline();
-    this.add(this.outline);
+    this.cubeOutline = buildBoxFrame(CUBIE_SIZE * 3 * 1.06, 0.012);
+    this.cubieOutline = buildBoxFrame(CUBIE_SIZE * 1.15, 0.009);
+    this.add(this.cubeOutline.group);
+    this.add(this.cubieOutline.group);
+    this.cubieOutline.group.visible = false;
     this.buildSolved();
-  }
-
-  private buildOutline(): THREE.LineSegments {
-    const edge = CUBIE_SIZE * 3 * 1.03;
-    const geo = new THREE.EdgesGeometry(new THREE.BoxGeometry(edge, edge, edge));
-    return new THREE.LineSegments(geo, this.outlineMat);
   }
 
   buildSolved(): void {
@@ -235,8 +209,11 @@ export class RubiksCube extends THREE.Group {
         }
       }
     }
-    this.outline = this.buildOutline();
-    this.add(this.outline);
+    // re-attach the highlight frames (buildSolved clears all children)
+    this.add(this.cubeOutline.group);
+    this.add(this.cubieOutline.group);
+    this.cubieOutline.group.visible = false;
+    this.setGlow(0);
   }
 
   isAnimating(): boolean {
@@ -442,17 +419,29 @@ export class RubiksCube extends THREE.Group {
     return this.cubies.filter((c) => c.logical.getComponent(axis) === layer);
   }
 
-  /** Blue "hitbox" glow on the cube's edges (0 = off). */
+  /** Blue "hitbox" outline around the whole cube (0 = off). */
   setGlow(intensity: number): void {
     const o = THREE.MathUtils.clamp(intensity, 0, 1);
-    this.outlineMat.opacity = o * 0.9;
-    this.outline.visible = o > 0.01;
+    this.cubeOutline.material.opacity = o * 0.85;
+    this.cubeOutline.group.visible = o > 0.01;
   }
 
-  /** Clear all per-cubie highlights + edge glow (call once per frame). */
+  /** Blue outline around a single cubie (0.9 when the laser is on it). */
+  showCubieOutline(cubie: Cubie | null, intensity = 0.9): void {
+    if (cubie === null) {
+      this.cubieOutline.group.visible = false;
+      return;
+    }
+    this.cubieOutline.group.position.copy(cubie.mesh.position);
+    this.cubieOutline.group.quaternion.copy(cubie.mesh.quaternion);
+    this.cubieOutline.material.opacity = THREE.MathUtils.clamp(intensity, 0, 1) * 0.9;
+    this.cubieOutline.group.visible = true;
+  }
+
+  /** Clear all highlights (call once per frame before applying new ones). */
   clearHighlights(): void {
-    for (const c of this.cubies) c.setHighlight(0);
     this.setGlow(0);
+    this.cubieOutline.group.visible = false;
   }
 
   /** True if any cubie mesh lies within `radius` of `point` (world space). */

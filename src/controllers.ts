@@ -21,6 +21,7 @@ const BODY_LEN = 0.16;
 const BODY_R = 0.02;
 const TIP_R = 0.022;
 const PROXIMITY = 0.25; // tip-to-cube-centre distance that turns on the whole-cube glow
+const HOLD_FORWARD = 0.1; // where a gravity-pulled cube comes to rest, in front of the tip
 
 const _q = new THREE.Quaternion();
 const _dir = new THREE.Vector3();
@@ -94,6 +95,29 @@ export class ControllerSource implements PinchSource {
   }
 
   pickCubie = (): Cubie | null => this.pickSliceFromRay()?.cubie ?? null;
+
+  /** True while the trigger (select) is held down. */
+  get selectPressed(): boolean {
+    return this.pinching;
+  }
+
+  /** Raycast the laser against arbitrary scene objects (used for the VR menu). */
+  castBeam(objects: THREE.Object3D[]): THREE.Intersection | null {
+    this.ray.updateMatrixWorld(true);
+    this.pinchPoint.setFromMatrixPosition(this.ray.matrixWorld);
+    _dir.set(0, 0, -1).applyQuaternion(this.ray.getWorldQuaternion(_q));
+    this.raycaster.set(this.pinchPoint, _dir);
+    const hits = this.raycaster.intersectObjects(objects, false);
+    return hits.length > 0 ? hits[0] : null;
+  }
+
+  /** World point the gravity-pulled cube flies to (a bit in front of the tip). */
+  getHoldPoint(out: THREE.Vector3): void {
+    this.ray.updateMatrixWorld(true);
+    this.pinchPoint.setFromMatrixPosition(this.ray.matrixWorld);
+    _dir.set(0, 0, -1).applyQuaternion(this.ray.getWorldQuaternion(_q));
+    out.copy(this.pinchPoint).addScaledVector(_dir, HOLD_FORWARD);
+  }
 
   /** Call every frame while an XR session is active. */
   update(): void {
