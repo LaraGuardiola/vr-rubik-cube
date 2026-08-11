@@ -1,45 +1,62 @@
 import * as THREE from 'three';
-import { RubiksCube, type AxisIndex } from './cube';
+import { RubiksCube, type AxisIndex, type Cubie } from './cube';
 import type { PinchSource } from './hands';
 
 // ---------------------------------------------------------------------------
 // Quest (Touch) controller support.
 //
 // A ControllerSource drives the same grab logic as a hand (PinchSource):
-//  * TRIGGER (select)  → aim at a face, pull the trigger: the slice under the
-//    laser turns as you orbit the controller, snapping to 90° on release.
-//    If the laser misses the cube, the trigger grabs the whole cube instead.
-//  * GRIP (squeeze)    → always grab/move/rotate the whole cube.
+//  * TRIGGER (select)  → "layer" channel: aim at a face, pull the trigger; the
+//    slice under the laser turns as you orbit the controller, snapping to 90°
+//    on release. If the beam misses the cube, nothing happens.
+//  * GRIP (squeeze)    → "whole-cube" channel: grab/move/rotate the whole cube.
 // The controller is rendered as a small procedural body + laser beam (no
-// imported models). The beam stops at the cube surface when it points at it.
+// imported models). The beam stops at the cube surface when it points at it,
+// and the targeted cubie (or the whole cube when close) glows blue as a
+// "hitbox" hint.
 // ---------------------------------------------------------------------------
 
-const RAY_LENGTH = 1.6; // beam length when it doesn't hit the cube
+const RAY_LENGTH = 1.2; // beam length when it doesn't hit the cube
 const BODY_LEN = 0.16;
 const BODY_R = 0.02;
 const TIP_R = 0.022;
+const PROXIMITY = 0.35; // tip-to-cube-centre distance that turns on the whole-cube glow
 
 const _q = new THREE.Quaternion();
 const _q2 = new THREE.Quaternion();
 const _dir = new THREE.Vector3();
 const _normal = new THREE.Vector3();
+const _center = new THREE.Vector3();
+
+interface SlicePick {
+  axis: AxisIndex;
+  layer: number;
+  distance: number;
+  cubie: Cubie;
+}
 
 export class ControllerSource implements PinchSource {
   readonly id: unknown = this;
   readonly pinchPoint = new THREE.Vector3();
   readonly palmPos = new THREE.Vector3();
   readonly palmQuat = new THREE.Quaternion();
-  readonly wholeGrabDistance = 1.6; // controllers can grab from arm's length
   onPinchStart: (() => void) | null = null;
   onPinchMove: (() => void) | null = null;
   onPinchEnd: (() => void) | null = null;
+  onGrabStart: (() => void) | null = null;
+  onGrabMove: (() => void) | null = null;
+  onGrabEnd: (() => void) | null = null;
 
   readonly grip: THREE.Group;
   readonly ray: THREE.Group;
 
-  private trigger = false;
-  private squeeze = false;
+  /** Cubie currently under the laser beam (for the blue hitbox hint). */
+  beamCubie: Cubie | null = null;
+  /** True when the controller tip is close enough to the cube to grab it. */
+  nearCube = false;
+
   pinching = false;
+  grabbing = false;
   private readonly raycaster = new THREE.Raycaster();
   private beam: THREE.Mesh;
 
@@ -55,11 +72,7 @@ export class ControllerSource implements PinchSource {
 
     // --- procedural controller visual --------------------------------------
     const bodyMat = new THREE.MeshStandardMaterial({ color: 0x2a2d35, roughness: 0.35, metalness: 0.6 });
-    const tipMat = new THREE.MeshStandardMaterial({
-      color: 0x8f7ff0,
-      emissive: 0x3a2a8a,
-      roughness: 0.3,
-    });
+    const tipMat = new THREE.MeshStandardMaterial({ color: 0x8f7ff0, emissive: 0x3a2a8a, roughness: 0.3 });
     const beamMat = new THREE.MeshBasicMaterial({
       color: 0x8f7ff0,
       transparent: true,
@@ -84,10 +97,6 @@ export class ControllerSource implements PinchSource {
     ray.add(this.beam);
   }
 
-  get preferWholeGrab(): boolean {
-    return this.squeeze;
-  }
-
   pickSlice = (): { axis: AxisIndex; layer: number } | null => {
     const pick = this.pickSliceFromRay();
     return pick ? { axis: pick.axis, layer: pick.layer } : null;
@@ -99,11 +108,17 @@ export class ControllerSource implements PinchSource {
     this.grip.getWorldQuaternion(this.palmQuat);
     this.ray.getWorldPosition(this.pinchPoint);
 
+    const pick = this.pickSliceFromRay();
+    this.beamCubie = pick ? pick.cubie : null;
+
+    this.cube.updateMatrixWorld(true);
+    this.cube.getWorldPosition(_center);
+    this.nearCube = this.pinchPoint.distanceTo(_center) < PROXIMITY;
+
     // beam length: stop at the cube surface when pointing at it
     const tracked = this.ray.visible || this.grip.visible;
     this.beam.visible = tracked;
     if (tracked) {
-      const pick = this.pickSliceFromRay();
       const len = pick ? Math.max(0.05, Math.min(pick.distance, RAY_LENGTH)) : RAY_LENGTH;
       this.beam.scale.set(1, 1, len);
       this.beam.position.z = -len / 2;
@@ -111,29 +126,30 @@ export class ControllerSource implements PinchSource {
   }
 
   private setTrigger(v: boolean): void {
-    this.trigger = v;
-    this.evalState();
-  }
-
-  private setSqueeze(v: boolean): void {
-    this.squeeze = v;
-    this.evalState();
-  }
-
-  private evalState(): void {
-    const pinching = this.trigger || this.squeeze;
-    if (pinching && !this.pinching) {
+    if (v && !this.pinching) {
       this.pinching = true;
       this.onPinchStart?.();
-    } else if (!pinching && this.pinching) {
+    } else if (!v && this.pinching) {
       this.pinching = false;
       this.onPinchEnd?.();
-    } else if (pinching) {
+    } else if (v) {
       this.onPinchMove?.();
     }
   }
 
-  private pickSliceFromRay(): { axis: AxisIndex; layer: number; distance: number } | null {
+  private setSqueeze(v: boolean): void {
+    if (v && !this.grabbing) {
+      this.grabbing = true;
+      this.onGrabStart?.();
+    } else if (!v && this.grabbing) {
+      this.grabbing = false;
+      this.onGrabEnd?.();
+    } else if (v) {
+      this.onGrabMove?.();
+    }
+  }
+
+  private pickSliceFromRay(): SlicePick | null {
     this.ray.updateMatrixWorld(true);
     this.pinchPoint.setFromMatrixPosition(this.ray.matrixWorld);
     _dir.set(0, 0, -1).applyQuaternion(this.ray.getWorldQuaternion(_q));
@@ -161,6 +177,6 @@ export class ControllerSource implements PinchSource {
       }
     }
     const layer = cubie.logical.getComponent(axis);
-    return { axis, layer, distance: hit.distance };
+    return { axis, layer, distance: hit.distance, cubie };
   }
 }

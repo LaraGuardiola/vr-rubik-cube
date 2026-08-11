@@ -47,17 +47,22 @@ console.log('VR Rubik\'s Cube loaded — build v2'); // harmless; used to trigge
 const skybox = new NebulaSkybox();
 scene.add(skybox);
 
-// Lighting: a hemisphere base + key + cool rim. Works in passthrough AR too.
-scene.add(new THREE.HemisphereLight(0x8fa2ff, 0x1a2233, 1.0));
-const keyLight = new THREE.DirectionalLight(0xfff4e6, 1.8);
+// Lighting: even fill from all directions so every sticker face (including the
+// bottom) is readable. Hemisphere + key + rim + fill + a soft up-light.
+scene.add(new THREE.AmbientLight(0x8899cc, 0.6));
+scene.add(new THREE.HemisphereLight(0x8fa2ff, 0x556080, 1.0));
+const keyLight = new THREE.DirectionalLight(0xfff4e6, 1.6);
 keyLight.position.set(3, 5, 4);
 scene.add(keyLight);
 const rimLight = new THREE.DirectionalLight(0x4499ff, 0.8);
 rimLight.position.set(-4, 1, -3);
 scene.add(rimLight);
-const fillLight = new THREE.DirectionalLight(0xff8844, 0.35);
-fillLight.position.set(0, -2, 3);
+const fillLight = new THREE.DirectionalLight(0xff8844, 0.5);
+fillLight.position.set(2, -1, 3);
 scene.add(fillLight);
+const upLight = new THREE.DirectionalLight(0x88aaff, 0.7); // lights the bottom face
+upLight.position.set(0, -4, 0);
+scene.add(upLight);
 
 // -------------------------------------------------------------------- cube
 const cube = new RubiksCube();
@@ -143,7 +148,8 @@ void setupXRButtons(renderer, {
       scene.background = null;
     }
     setHint(
-      'Hands: pinch thumb + index to grab a layer, twist to turn\nControllers: aim + trigger to turn a layer · Grip button to move the cube',
+      'HANDS  ·  index pinch = grab & turn a layer\n        ·  middle pinch = grab & move the cube\n' +
+        'CONTROLLERS  ·  aim + trigger = turn layer\n              ·  grip button = move the cube',
     );
     statusEl.textContent = session.environmentBlendMode === 'additive' ? 'Immersive VR' : 'Immersive AR';
   },
@@ -192,6 +198,14 @@ renderer.setAnimationLoop((time) => {
     }
     for (const source of controllerSources) {
       if (source) source.update();
+    }
+    // blue "hitbox" glow: the cubie under a laser + a soft whole-cube glow when
+    // a controller is close enough to grab
+    cube.clearHighlights();
+    for (const source of controllerSources) {
+      if (!source) continue;
+      if (source.beamCubie) source.beamCubie.setHighlight(0.9);
+      if (source.nearCube) cube.setGlow(0.3);
     }
   }
   checkSolved();

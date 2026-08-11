@@ -11,7 +11,7 @@ import * as THREE from 'three';
 // rotation is always an exact multiple of 90 degrees so there is no drift.
 // ---------------------------------------------------------------------------
 
-export const CUBIE_SIZE = 0.16; // metres per cubie (whole cube ~0.48 m)
+export const CUBIE_SIZE = 0.1; // metres per cubie (whole cube ~0.3 m)
 const HALF = CUBIE_SIZE / 2;
 const STICKER_SIZE = CUBIE_SIZE * 0.8;
 const STICKER_OFFSET = HALF + 0.0015;
@@ -90,13 +90,18 @@ export class Cubie {
   logical: THREE.Vector3;
   original: THREE.Vector3; // logical position when the cube was built (solved)
   mesh: THREE.Group;
+  private bodyMat: THREE.MeshStandardMaterial;
+  private stickerMats: THREE.MeshStandardMaterial[] = [];
 
   constructor(x: number, y: number, z: number) {
     this.logical = new THREE.Vector3(x, y, z);
     this.original = new THREE.Vector3(x, y, z);
     this.mesh = new THREE.Group();
 
-    const body = new THREE.Mesh(new THREE.BoxGeometry(CUBIE_SIZE, CUBIE_SIZE, CUBIE_SIZE), getBodyMaterial());
+    // Per-cubie material clones so individual cubies can be highlighted (blue
+    // "hitbox" glow) without affecting the rest of the cube.
+    this.bodyMat = getBodyMaterial().clone();
+    const body = new THREE.Mesh(new THREE.BoxGeometry(CUBIE_SIZE, CUBIE_SIZE, CUBIE_SIZE), this.bodyMat);
     this.mesh.add(body);
 
     const stickerPlane = new THREE.PlaneGeometry(STICKER_SIZE, STICKER_SIZE);
@@ -114,7 +119,9 @@ export class Cubie {
       const coord = this.logical.getComponent(axisOf(face.key));
       const isOnFace = face.key.startsWith('+') ? coord === 1 : coord === -1;
       if (isOnFace) {
-        const sticker = new THREE.Mesh(stickerPlane, getStickerMaterial(FACE_COLOR[face.key]));
+        const mat = getStickerMaterial(FACE_COLOR[face.key]).clone();
+        this.stickerMats.push(mat);
+        const sticker = new THREE.Mesh(stickerPlane, mat);
         sticker.position.copy(face.normal).multiplyScalar(STICKER_OFFSET);
         sticker.lookAt(face.normal);
         this.mesh.add(sticker);
@@ -122,6 +129,17 @@ export class Cubie {
     }
 
     this.mesh.position.set(x * CUBIE_SIZE, y * CUBIE_SIZE, z * CUBIE_SIZE);
+  }
+
+  /** Blue "hitbox" glow. intensity 0 clears it. */
+  setHighlight(intensity: number): void {
+    const i = THREE.MathUtils.clamp(intensity, 0, 1);
+    this.bodyMat.emissive.setRGB(0.12, 0.35, 1);
+    this.bodyMat.emissiveIntensity = i;
+    for (const m of this.stickerMats) {
+      m.emissive.setRGB(0.12, 0.35, 1);
+      m.emissiveIntensity = i;
+    }
   }
 }
 
@@ -373,6 +391,16 @@ export class RubiksCube extends THREE.Group {
   /** Cubies whose logical coordinate along `axis` equals `layer`. */
   cubiesInSlice(axis: AxisIndex, layer: number): Cubie[] {
     return this.cubies.filter((c) => c.logical.getComponent(axis) === layer);
+  }
+
+  /** Turn the whole-cube blue "hitbox" glow on/off (used for controller proximity). */
+  setGlow(intensity: number): void {
+    for (const c of this.cubies) c.setHighlight(intensity);
+  }
+
+  /** Clear all per-cubie highlights (call once per frame before applying new ones). */
+  clearHighlights(): void {
+    for (const c of this.cubies) c.setHighlight(0);
   }
 
   /** True if any cubie mesh lies within `radius` of `point` (world space). */

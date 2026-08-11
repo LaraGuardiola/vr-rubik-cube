@@ -24,13 +24,14 @@ export interface PinchSource {
    * (controller laser). Returns null when the ray misses the cube.
    */
   pickSlice?: () => { axis: AxisIndex; layer: number } | null;
-  /** If true at pinch start, force a whole-cube grab (e.g. grip button). */
-  preferWholeGrab?: boolean;
-  /** Max distance from the cube centre for an empty-space whole-cube grab. */
-  wholeGrabDistance?: number;
+  // "layer" channel — index-finger pinch (hands) or trigger (controllers)
   onPinchStart: (() => void) | null;
   onPinchMove: (() => void) | null;
   onPinchEnd: (() => void) | null;
+  // "whole-cube" channel — middle-finger pinch (hands) or grip button (controllers)
+  onGrabStart: (() => void) | null;
+  onGrabMove: (() => void) | null;
+  onGrabEnd: (() => void) | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -72,14 +73,20 @@ export class HandRig implements PinchSource {
   readonly pinchPoint = new THREE.Vector3();
   readonly palmPos = new THREE.Vector3();
   readonly palmQuat = new THREE.Quaternion();
-  readonly wholeGrabDistance = 0.55;
   onPinchStart: (() => void) | null = null;
   onPinchMove: (() => void) | null = null;
   onPinchEnd: (() => void) | null = null;
+  onGrabStart: (() => void) | null = null;
+  onGrabMove: (() => void) | null = null;
+  onGrabEnd: (() => void) | null = null;
 
   readonly hand: THREE.Group;
+  /** Index-finger pinch (thumb↔index) — grabs a layer to turn. */
   pinching = false;
+  /** Middle-finger pinch (thumb↔middle) — grabs the whole cube. */
+  grabbing = false;
   pinchDistance = Infinity;
+  grabDistance = Infinity;
 
   private joints = new Map<string, THREE.Object3D>();
   private spheres = new Map<string, THREE.Mesh>();
@@ -99,6 +106,7 @@ export class HandRig implements PinchSource {
   private wrist: THREE.Object3D | null = null;
   private thumbTip: THREE.Object3D | null = null;
   private indexTip: THREE.Object3D | null = null;
+  private middleTip: THREE.Object3D | null = null;
 
   constructor(hand: THREE.Group) {
     this.hand = hand;
@@ -142,6 +150,7 @@ export class HandRig implements PinchSource {
     this.wrist = this.joints.get('wrist') ?? null;
     this.thumbTip = this.joints.get('thumb-tip') ?? null;
     this.indexTip = this.joints.get('index-tip') ?? null;
+    this.middleTip = this.joints.get('middle-tip') ?? null;
   }
 
   /** Call every frame while an XR session is active. */
@@ -192,6 +201,9 @@ export class HandRig implements PinchSource {
 
     const thumb = this.thumbTip;
     const index = this.indexTip;
+    const middle = this.middleTip;
+
+    // index pinch (layer grab): thumb↔index
     if (thumb !== null && index !== null && thumb.visible && index.visible) {
       thumb.getWorldPosition(_a);
       index.getWorldPosition(_b);
@@ -199,6 +211,15 @@ export class HandRig implements PinchSource {
       this.pinchPoint.copy(_a).add(_b).multiplyScalar(0.5);
     } else {
       this.pinchDistance = Infinity;
+    }
+
+    // middle pinch (whole-cube grab): thumb↔middle
+    if (thumb !== null && middle !== null && thumb.visible && middle.visible) {
+      thumb.getWorldPosition(_a);
+      middle.getWorldPosition(_b);
+      this.grabDistance = _a.distanceTo(_b);
+    } else {
+      this.grabDistance = Infinity;
     }
 
     if (this.wrist !== null && this.wrist.visible) {
@@ -216,6 +237,17 @@ export class HandRig implements PinchSource {
       this.onPinchMove?.();
     }
 
-    this.tipMat.emissiveIntensity = this.pinching ? 0.6 : 0.0;
+    if (this.grabbing && this.grabDistance > PINCH_END) {
+      this.grabbing = false;
+      this.onGrabEnd?.();
+    } else if (!this.grabbing && this.grabDistance < PINCH_START) {
+      this.grabbing = true;
+      this.onGrabStart?.();
+    } else if (this.grabbing) {
+      this.onGrabMove?.();
+    }
+
+    const glow = this.pinching || this.grabbing ? 0.6 : 0.0;
+    this.tipMat.emissiveIntensity = glow;
   }
 }
