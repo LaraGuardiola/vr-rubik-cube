@@ -10,17 +10,18 @@ import { buildRectFrame } from './outline';
 // button activates it.
 // ---------------------------------------------------------------------------
 
-export type MenuAction = 'scramble' | 'reset' | 'undo';
+export type MenuAction = 'scramble' | 'solve' | 'reset' | 'undo';
 
 const ACTIONS: { action: MenuAction; label: string }[] = [
   { action: 'scramble', label: 'Scramble' },
+  { action: 'solve', label: 'Solve' },
   { action: 'reset', label: 'Reset to Solved' },
   { action: 'undo', label: 'Undo' },
 ];
 
 const BTN_W = 0.56;
-const BTN_H = 0.12;
-const BTN_GAP = 0.06;
+const BTN_H = 0.11;
+const BTN_GAP = 0.05;
 
 const _dir = new THREE.Vector3();
 
@@ -56,11 +57,11 @@ export class VRMenu extends THREE.Group {
     this.visible = false;
 
     const panel = new THREE.Mesh(
-      new THREE.BoxGeometry(0.74, 0.56, 0.02),
+      new THREE.BoxGeometry(0.74, 0.74, 0.02),
       new THREE.MeshBasicMaterial({ color: 0x0a0a16, transparent: true, opacity: 0.92 }),
     );
     this.add(panel);
-    const border = buildRectFrame(0.76, 0.58, 0.006);
+    const border = buildRectFrame(0.76, 0.76, 0.006);
     border.material.opacity = 0.5;
     this.add(border.group);
 
@@ -69,7 +70,7 @@ export class VRMenu extends THREE.Group {
     // backing shows as a clean blue border around the (opaque) button. No thin
     // wireframe bars, so nothing can clip or look broken from any angle.
     const backingMat = new THREE.MeshBasicMaterial({ color: 0x3d7bff });
-    const startY = 0.56 / 2 - BTN_H / 2 - 0.04;
+    const startY = 0.74 / 2 - BTN_H / 2 - 0.03;
     ACTIONS.forEach((a, i) => {
       const material = new THREE.MeshBasicMaterial({ map: makeLabelTexture(a.label), transparent: true });
       const y = startY - i * (BTN_H + BTN_GAP);

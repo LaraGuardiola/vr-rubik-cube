@@ -111,6 +111,17 @@ while (cube.history.length > 0) {
 check('solved after full undo', cube.isSolved());
 check('integrity after full undo', assertIntegrity(cube) === null, assertIntegrity(cube) ?? '');
 
+console.log('— solve animation —');
+cube.scramble(15);
+settle(cube, 600);
+check('scrambled for solve', !cube.isSolved() && cube.history.length > 0);
+cube.solve();
+check('solve queues moves', cube.isAnimating());
+settle(cube, 800);
+check('solved after solve animation', cube.isSolved());
+check('history empty after solve', cube.history.length === 0);
+check('integrity after solve', assertIntegrity(cube) === null, assertIntegrity(cube) ?? '');
+
 console.log('— reset rebuild —');
 cube.scramble(10);
 settle(cube, 400);

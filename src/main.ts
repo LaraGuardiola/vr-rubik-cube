@@ -23,6 +23,7 @@ const statusEl = document.getElementById('status') as HTMLElement;
 const winToastEl = document.getElementById('winToast') as HTMLElement;
 const hintEl = document.getElementById('hint') as HTMLElement;
 const btnScramble = document.getElementById('btnScramble') as HTMLButtonElement;
+const btnSolve = document.getElementById('btnSolve') as HTMLButtonElement;
 const btnReset = document.getElementById('btnReset') as HTMLButtonElement;
 const btnUndo = document.getElementById('btnUndo') as HTMLButtonElement;
 
@@ -83,11 +84,17 @@ const prevSelect = [false, false];
 const prevMenu = [false, false];
 const _cubeCenter = new THREE.Vector3();
 
-function activateMenu(action: 'scramble' | 'reset' | 'undo'): void {
+function activateMenu(action: 'scramble' | 'solve' | 'reset' | 'undo'): void {
   if (action === 'scramble') {
     cube.scramble(22);
     scrambling = true;
     statusEl.textContent = 'Scrambling…';
+  } else if (action === 'solve') {
+    if (cube.history.length > 0) {
+      cube.solve();
+      solving = true;
+      statusEl.textContent = 'Solving…';
+    }
   } else if (action === 'reset') {
     cube.buildSolved();
     scrambling = false;
@@ -111,10 +118,18 @@ function showWinToast(): void {
 
 // ------------------------------------------------------------- game actions
 let scrambling = false;
+let solving = false;
 btnScramble.addEventListener('click', () => {
   cube.scramble(22);
   scrambling = true;
   statusEl.textContent = 'Scrambling…';
+});
+btnSolve.addEventListener('click', () => {
+  if (cube.history.length > 0) {
+    cube.solve();
+    solving = true;
+    statusEl.textContent = 'Solving…';
+  }
 });
 btnReset.addEventListener('click', () => {
   cube.buildSolved();
@@ -199,6 +214,15 @@ function checkSolved(): void {
     }
     return;
   }
+  if (solving) {
+    if (!cube.isAnimating()) {
+      solving = false;
+      wasSolved = true;
+      statusEl.textContent = 'Solved!';
+      showWinToast();
+    }
+    return;
+  }
   if (cube.isAnimating() || renderer.xr.isPresenting) return;
   const solved = cube.isSolved();
   if (solved && !wasSolved) showWinToast();
@@ -254,7 +278,7 @@ renderer.setAnimationLoop((time) => {
     // VR menu: any controller's beam hovering a button highlights it; pressing
     // the trigger (index finger) on a hovered button activates it. The ☰ menu
     // button on the left controller toggles the menu.
-    const sourceHover: ('scramble' | 'reset' | 'undo' | null)[] = [null, null];
+    const sourceHover: ('scramble' | 'solve' | 'reset' | 'undo' | null)[] = [null, null];
     for (let i = 0; i < controllerSources.length; i++) {
       const source = controllerSources[i];
       if (!source || !vrMenu.isOpen) continue;
