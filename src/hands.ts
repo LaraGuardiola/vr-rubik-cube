@@ -1,4 +1,37 @@
 import * as THREE from 'three';
+import type { AxisIndex } from './cube';
+
+// ---------------------------------------------------------------------------
+// Pinch sources.
+//
+// A "PinchSource" is anything that can grab: a tracked hand (HandRig below) or
+// a controller (ControllerSource in controllers.ts). Each exposes a world-space
+// grab point/orientation and start/move/end callbacks; XRControls consumes the
+// common interface, so hands and controllers drive identical interactions.
+// ---------------------------------------------------------------------------
+
+export interface PinchSource {
+  /** Identity used by XRControls to match move/end events to a grab. */
+  id: unknown;
+  /** World-space grab point (hand: thumb+index midpoint; controller: tip). */
+  pinchPoint: THREE.Vector3;
+  /** World-space "hand"/grip position (used for whole-cube attachment). */
+  palmPos: THREE.Vector3;
+  /** World-space "hand"/grip orientation. */
+  palmQuat: THREE.Quaternion;
+  /**
+   * If present, called at pinch start to pick an exact slice via a ray
+   * (controller laser). Returns null when the ray misses the cube.
+   */
+  pickSlice?: () => { axis: AxisIndex; layer: number } | null;
+  /** If true at pinch start, force a whole-cube grab (e.g. grip button). */
+  preferWholeGrab?: boolean;
+  /** Max distance from the cube centre for an empty-space whole-cube grab. */
+  wholeGrabDistance?: number;
+  onPinchStart: (() => void) | null;
+  onPinchMove: (() => void) | null;
+  onPinchEnd: (() => void) | null;
+}
 
 // ---------------------------------------------------------------------------
 // Hand tracking.
@@ -13,24 +46,8 @@ import * as THREE from 'three';
 //
 // Pinch detection uses thumb-tip <-> index-tip distance with hysteresis so a
 // real "touch" feels forgiving: grab engages under ~3.5 cm, releases over
-// ~5.5 cm. Callbacks are consumed by xrControls.ts.
+// ~5.5 cm.
 // ---------------------------------------------------------------------------
-
-export interface HandState {
-  /** The hand group from three's WebXRManager. */
-  hand: THREE.Group;
-  /** True while a pinch gesture is held (hysteresis applied). */
-  pinching: boolean;
-  /** Distance between thumb tip and index tip (metres). Infinity if untracked. */
-  pinchDistance: number;
-  /** World-space midpoint of thumb+index tips — the "grab point". */
-  pinchPoint: THREE.Vector3;
-  /** World-space wrist position. */
-  palmPos: THREE.Vector3;
-  /** World-space wrist orientation. */
-  palmQuat: THREE.Quaternion;
-  rig: HandRig;
-}
 
 const FINGER_CHAINS: string[][] = [
   ['thumb-metacarpal', 'thumb-phalanx-proximal', 'thumb-phalanx-distal', 'thumb-tip'],
@@ -50,9 +67,19 @@ const _mid = new THREE.Vector3();
 const _dir = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 
-export class HandRig {
+export class HandRig implements PinchSource {
+  readonly id: unknown = this;
+  readonly pinchPoint = new THREE.Vector3();
+  readonly palmPos = new THREE.Vector3();
+  readonly palmQuat = new THREE.Quaternion();
+  readonly wholeGrabDistance = 0.55;
+  onPinchStart: (() => void) | null = null;
+  onPinchMove: (() => void) | null = null;
+  onPinchEnd: (() => void) | null = null;
+
   readonly hand: THREE.Group;
-  readonly state: HandState;
+  pinching = false;
+  pinchDistance = Infinity;
 
   private joints = new Map<string, THREE.Object3D>();
   private spheres = new Map<string, THREE.Mesh>();
@@ -75,15 +102,6 @@ export class HandRig {
 
   constructor(hand: THREE.Group) {
     this.hand = hand;
-    this.state = {
-      hand,
-      pinching: false,
-      pinchDistance: Infinity,
-      pinchPoint: new THREE.Vector3(),
-      palmPos: new THREE.Vector3(),
-      palmQuat: new THREE.Quaternion(),
-      rig: this,
-    };
     // three dispatches a 'connected' event on the hand group when an XR input
     // source with hand data appears; the EventMap type doesn't know about it.
     (hand as unknown as THREE.EventDispatcher<Record<string, unknown>>).addEventListener('connected', () => this.refresh());
@@ -172,37 +190,32 @@ export class HandRig {
       }
     }
 
-    const s = this.state;
     const thumb = this.thumbTip;
     const index = this.indexTip;
     if (thumb !== null && index !== null && thumb.visible && index.visible) {
       thumb.getWorldPosition(_a);
       index.getWorldPosition(_b);
-      s.pinchDistance = _a.distanceTo(_b);
-      s.pinchPoint.copy(_a).add(_b).multiplyScalar(0.5);
+      this.pinchDistance = _a.distanceTo(_b);
+      this.pinchPoint.copy(_a).add(_b).multiplyScalar(0.5);
     } else {
-      s.pinchDistance = Infinity;
+      this.pinchDistance = Infinity;
     }
 
     if (this.wrist !== null && this.wrist.visible) {
-      this.wrist.getWorldPosition(s.palmPos);
-      this.wrist.getWorldQuaternion(s.palmQuat);
+      this.wrist.getWorldPosition(this.palmPos);
+      this.wrist.getWorldQuaternion(this.palmQuat);
     }
 
-    if (s.pinching && s.pinchDistance > PINCH_END) {
-      s.pinching = false;
-      this.onPinchEnd?.(s);
-    } else if (!s.pinching && s.pinchDistance < PINCH_START) {
-      s.pinching = true;
-      this.onPinchStart?.(s);
-    } else if (s.pinching) {
-      this.onPinchMove?.(s);
+    if (this.pinching && this.pinchDistance > PINCH_END) {
+      this.pinching = false;
+      this.onPinchEnd?.();
+    } else if (!this.pinching && this.pinchDistance < PINCH_START) {
+      this.pinching = true;
+      this.onPinchStart?.();
+    } else if (this.pinching) {
+      this.onPinchMove?.();
     }
 
-    this.tipMat.emissiveIntensity = s.pinching ? 0.6 : 0.0;
+    this.tipMat.emissiveIntensity = this.pinching ? 0.6 : 0.0;
   }
-
-  onPinchStart: ((s: HandState) => void) | null = null;
-  onPinchMove: ((s: HandState) => void) | null = null;
-  onPinchEnd: ((s: HandState) => void) | null = null;
 }

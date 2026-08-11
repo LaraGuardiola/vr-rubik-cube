@@ -11,7 +11,7 @@ import * as THREE from 'three';
 // rotation is always an exact multiple of 90 degrees so there is no drift.
 // ---------------------------------------------------------------------------
 
-export const CUBIE_SIZE = 0.2; // metres per cubie (whole cube ~0.6 m)
+export const CUBIE_SIZE = 0.16; // metres per cubie (whole cube ~0.48 m)
 const HALF = CUBIE_SIZE / 2;
 const STICKER_SIZE = CUBIE_SIZE * 0.8;
 const STICKER_OFFSET = HALF + 0.0015;

@@ -3,6 +3,7 @@ import { RubiksCube } from './cube';
 import { NebulaSkybox } from './skybox';
 import { DesktopControls } from './controlsDesktop';
 import { HandRig } from './hands';
+import { ControllerSource } from './controllers';
 import { XRControls } from './xrControls';
 import { setupXRButtons } from './xrSession';
 
@@ -12,7 +13,9 @@ import { setupXRButtons } from './xrSession';
 // ---------------------------------------------------------------------------
 
 const SPAWN_DESKTOP = new THREE.Vector3(0, 1.35, 0);
-const SPAWN_XR = new THREE.Vector3(0, 1.35, -2.6);
+// In VR the cube spawns close and low so it can basically be grabbed. (The
+// cubies are 0.16 m, so the whole cube is ~0.48 m.)
+const SPAWN_XR = new THREE.Vector3(0, 1.2, -1.0);
 
 const container = document.getElementById('app') as HTMLElement;
 const statusEl = document.getElementById('status') as HTMLElement;
@@ -65,6 +68,7 @@ scene.add(cube);
 const desktopControls = new DesktopControls(container, camera, cube);
 const xrControls = new XRControls(cube);
 const handRigs: HandRig[] = [];
+const controllerSources: ControllerSource[] = [];
 
 // -------------------------------------------------------------------- hints
 function setHint(text: string): void {
@@ -101,14 +105,26 @@ function respawnCube(xrMode: boolean): void {
   cube.quaternion.identity();
 }
 
-function attachHands(): void {
+// Attach hand rigs AND controller sources for both input slots. Whichever the
+// user has (tracked hands or Quest controllers) drives the same interactions.
+function attachInputSources(): void {
   for (let i = 0; i < 2; i++) {
     const hand = renderer.xr.getHand(i);
     if (!hand.parent) scene.add(hand);
     if (handRigs[i] === undefined) {
       const rig = new HandRig(hand);
       handRigs[i] = rig;
-      xrControls.attach(rig.state);
+      xrControls.attach(rig);
+    }
+
+    const grip = renderer.xr.getControllerGrip(i);
+    const ray = renderer.xr.getController(i);
+    if (!grip.parent) scene.add(grip);
+    if (!ray.parent) scene.add(ray);
+    if (controllerSources[i] === undefined) {
+      const source = new ControllerSource(grip, ray, cube);
+      controllerSources[i] = source;
+      xrControls.attach(source);
     }
   }
 }
@@ -117,7 +133,7 @@ void setupXRButtons(renderer, {
   onSessionStart: (session, mode) => {
     desktopControls.setEnabled(false);
     respawnCube(true);
-    attachHands();
+    attachInputSources();
     if (mode === 'ar') {
       // passthrough backdrop — hide the nebula
       skybox.visible = false;
@@ -126,7 +142,9 @@ void setupXRButtons(renderer, {
       skybox.visible = true;
       scene.background = null;
     }
-    setHint('Pinch thumb + index to grab a layer\nTwist your hand to turn · Pinch near the cube to move it');
+    setHint(
+      'Hands: pinch thumb + index to grab a layer, twist to turn\nControllers: aim + trigger to turn a layer · Grip button to move the cube',
+    );
     statusEl.textContent = session.environmentBlendMode === 'additive' ? 'Immersive VR' : 'Immersive AR';
   },
   onSessionEnd: () => {
@@ -171,6 +189,9 @@ renderer.setAnimationLoop((time) => {
   if (renderer.xr.isPresenting) {
     for (const rig of handRigs) {
       if (rig) rig.update();
+    }
+    for (const source of controllerSources) {
+      if (source) source.update();
     }
   }
   checkSolved();
