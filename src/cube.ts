@@ -185,8 +185,8 @@ export class RubiksCube extends THREE.Group {
 
   constructor() {
     super();
-    this.cubeOutline = buildBoxFrame(CUBIE_SIZE * 3 * 1.06, 0.012);
-    this.cubieOutline = buildBoxFrame(CUBIE_SIZE * 1.15, 0.009);
+    this.cubeOutline = buildBoxFrame(CUBIE_SIZE * 3 * 1.06, 0.004);
+    this.cubieOutline = buildBoxFrame(CUBIE_SIZE * 1.15, 0.003);
     this.add(this.cubeOutline.group);
     this.add(this.cubieOutline.group);
     this.cubieOutline.group.visible = false;

@@ -22,9 +22,6 @@ const BTN_H = 0.12;
 const BTN_GAP = 0.06;
 
 const _dir = new THREE.Vector3();
-const _right = new THREE.Vector3();
-const _up = new THREE.Vector3(0, 1, 0);
-const _q = new THREE.Quaternion();
 
 function makeLabelTexture(text: string): THREE.CanvasTexture {
   const c = document.createElement('canvas');
@@ -71,7 +68,7 @@ export class VRMenu extends THREE.Group {
       this.buttons.push({ action: a.action, mesh });
     });
 
-    this.hoverFrame = buildRectFrame(BTN_W + 0.02, BTN_H + 0.02, 0.01);
+    this.hoverFrame = buildRectFrame(BTN_W + 0.02, BTN_H + 0.02, 0.006);
     this.hoverFrame.group.visible = false;
     this.add(this.hoverFrame.group);
   }
@@ -89,22 +86,18 @@ export class VRMenu extends THREE.Group {
     return this.buttons.find((b) => b.mesh === object)?.action ?? null;
   }
 
+  /** Open the menu, centred in front of the user at a fixed world position. */
   open(camera: THREE.Camera): void {
     this.visible = true;
-    this.anchorTo(camera);
+    camera.getWorldDirection(_dir);
+    this.position.copy(camera.position).addScaledVector(_dir, 1.15);
+    this.position.y = camera.position.y; // eye height, straight ahead
+    this.lookAt(camera.position);
   }
 
   close(): void {
     this.visible = false;
     this.setHovered(null);
-  }
-
-  /** Keep the menu floating in front-and-to-the-right of the user (call each frame while open). */
-  anchorTo(camera: THREE.Camera): void {
-    camera.getWorldDirection(_dir);
-    _right.set(1, 0, 0).applyQuaternion(camera.getWorldQuaternion(_q));
-    this.position.copy(camera.position).addScaledVector(_dir, 1.3).addScaledVector(_right, 0.45).addScaledVector(_up, 0.05);
-    this.lookAt(camera.position);
   }
 
   setHovered(action: MenuAction | null): void {

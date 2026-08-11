@@ -56,6 +56,8 @@ export class ControllerSource implements PinchSource {
   grabbing = false;
   private readonly raycaster = new THREE.Raycaster();
   private beam: THREE.Mesh;
+  private inputSource: XRInputSource | null = null;
+  private menuDown = false;
 
   constructor(grip: THREE.Group, ray: THREE.Group, private cube: RubiksCube) {
     this.grip = grip;
@@ -66,6 +68,9 @@ export class ControllerSource implements PinchSource {
     gripEvents.addEventListener('selectend', () => this.setTrigger(false));
     gripEvents.addEventListener('squeezestart', () => this.setSqueeze(true));
     gripEvents.addEventListener('squeezeend', () => this.setSqueeze(false));
+    gripEvents.addEventListener('connected', (e) => {
+      this.inputSource = (e as unknown as { data?: XRInputSource }).data ?? null;
+    });
 
     // --- procedural controller visual --------------------------------------
     const bodyMat = new THREE.MeshStandardMaterial({ color: 0x2a2d35, roughness: 0.35, metalness: 0.6 });
@@ -101,6 +106,11 @@ export class ControllerSource implements PinchSource {
     return this.pinching;
   }
 
+  /** True while the ☰ menu button is held down (read from the gamepad). */
+  get menuPressed(): boolean {
+    return this.menuDown;
+  }
+
   /** Raycast the laser against arbitrary scene objects (used for the VR menu). */
   castBeam(objects: THREE.Object3D[]): THREE.Intersection | null {
     this.ray.updateMatrixWorld(true);
@@ -124,6 +134,7 @@ export class ControllerSource implements PinchSource {
     this.grip.getWorldPosition(this.palmPos);
     this.grip.getWorldQuaternion(this.palmQuat);
     this.ray.getWorldPosition(this.pinchPoint);
+    this.menuDown = this.readMenuButton();
 
     const pick = this.pickSliceFromRay();
     this.beamCubie = pick ? pick.cubie : null;
@@ -181,6 +192,19 @@ export class ControllerSource implements PinchSource {
     } else if (v) {
       this.onGrabMove?.();
     }
+  }
+
+  /** Look for the ☰ menu button in the input source's gamepad. */
+  private readMenuButton(): boolean {
+    const gp = this.inputSource?.gamepad;
+    if (!gp || !gp.buttons) return false;
+    for (const b of gp.buttons) {
+      const id = (b as unknown as { id?: string }).id;
+      if (id && /menu/i.test(id)) return !!b.pressed;
+    }
+    // fallback: on many Touch layouts the menu button is the last one
+    const last = gp.buttons[gp.buttons.length - 1];
+    return last ? !!last.pressed : false;
   }
 
   private pickSliceFromRay(): SlicePick | null {

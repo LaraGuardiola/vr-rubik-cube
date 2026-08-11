@@ -22,6 +22,7 @@ import type { PinchSource } from './hands';
 
 const GRAB_RADIUS = 0.055; // metres around a pinch point that counts as "touching a cubie"
 const HAND_REACH = 0.6; // hands: middle pinch must be within this of the cube centre to grab
+const DIST_THRESHOLD = 1.0; // beyond this: gravity pull only (no face/rotate); within: direct grab
 const HOLD_DIST = 0.12; // gravity pull locks on when the cube centre is this close to the hold point
 const PULL_SPEED = 10; // per-second ease rate of the gravity pull
 const PULL_TRIGGER = 0.06; // metres the controller must be yanked back before the pull starts
@@ -90,6 +91,11 @@ export class XRControls {
 
   private onPinchStart(source: PinchSource): void {
     if (this.layerGrab !== null || this.wholeGrab !== null) return; // busy
+
+    // layers can only be turned from close up (within DIST_THRESHOLD)
+    this.cube.updateMatrixWorld(true);
+    this.cube.getWorldPosition(_center);
+    if (source.pinchPoint.distanceTo(_center) > DIST_THRESHOLD) return;
 
     let cubie: { logical: THREE.Vector3 } | null = null;
 
@@ -199,21 +205,21 @@ export class XRControls {
     if (!canGrab) return;
 
     this.cube.getWorldPosition(_center);
-    const distToHand = source.palmPos.distanceTo(_center);
+    const dist = source.pinchPoint.distanceTo(_center);
 
-    // Controllers: holding grip on the cube only "arms" the grab — the gravity
-    // pull needs an explicit pull gesture. Hands: a middle pinch grabs directly.
+    // Gravity pull only applies from beyond DIST_THRESHOLD; within that the
+    // cube is grabbed directly (rigid attach). Controllers arm the pull and
+    // require an explicit pull gesture; a hand's middle pinch grabs directly.
     const isController = source.pickCubie !== undefined;
-    const withinHold = distToHand <= HOLD_DIST;
-    const pulling = !isController && !withinHold;
+    const armed = isController && dist > DIST_THRESHOLD;
 
     this.wholeGrab = {
       handPos0: source.palmPos.clone(),
       handQuat0: source.palmQuat.clone(),
       cubePos0: this.cube.getWorldPosition(new THREE.Vector3()),
       cubeQuat0: this.cube.getWorldQuaternion(new THREE.Quaternion()),
-      pulling,
-      armed: isController && !withinHold,
+      pulling: false,
+      armed,
       armedPoint: source.pinchPoint.clone(),
     };
     this.wholeSource = source;

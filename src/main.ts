@@ -76,10 +76,12 @@ const xrControls = new XRControls(cube);
 const handRigs: HandRig[] = [];
 const controllerSources: ControllerSource[] = [];
 
-// VR floating menu (opened with the left controller's trigger on empty space)
+// VR floating menu (opened with the ☰ menu button on the left controller)
 const vrMenu = new VRMenu();
 scene.add(vrMenu);
 const prevSelect = [false, false];
+const prevMenu = [false, false];
+const _cubeCenter = new THREE.Vector3();
 
 function activateMenu(action: 'scramble' | 'reset' | 'undo'): void {
   if (action === 'scramble') {
@@ -168,8 +170,8 @@ void setupXRButtons(renderer, {
       scene.background = null;
     }
     setHint(
-      'LEFT TRIGGER on empty space = menu\nAim + trigger = turn layer (drag direction sets it) · Grip = pull/move cube\n' +
-        'Hands: index = layer · middle = move',
+      '☰ menu button = menu · Aim + trigger = turn layer · Grip = grab/pull\n' +
+        'Far (>1m): pull the cube · Close: turn layers & grab directly\nHands: index = layer · middle = move',
     );
     statusEl.textContent = session.environmentBlendMode === 'additive' ? 'Immersive VR' : 'Immersive AR';
   },
@@ -221,34 +223,44 @@ renderer.setAnimationLoop((time) => {
       if (source) source.update();
     }
 
-    // blue "hitbox" hint: a thick outline around the laser-targeted cubie and
-    // around the cube's edges when a controller is close enough to grab
+    // blue "hitbox" hint: beyond 1 m only the cube's edges glow (gravity-pull
+    // range); within 1 m the laser-targeted cubie gets its own outline and the
+    // whole cube glows when close enough to grab directly
     cube.clearHighlights();
     for (const source of controllerSources) {
       if (!source) continue;
-      if (source.beamCubie) cube.showCubieOutline(source.beamCubie);
-      if (source.nearCube) cube.setGlow(0.6);
+      const dist = source.pinchPoint.distanceTo(cube.getWorldPosition(_cubeCenter));
+      if (dist <= 1.0) {
+        if (source.beamCubie) cube.showCubieOutline(source.beamCubie);
+        if (dist < 0.4) cube.setGlow(0.6);
+      } else {
+        cube.setGlow(0.6);
+      }
     }
 
-    // VR menu: left controller's trigger on empty space toggles it; trigger on
-    // a button activates that action
-    if (vrMenu.isOpen) vrMenu.anchorTo(camera);
+    // VR menu: the ☰ menu button (left controller) toggles it; beam + trigger
+    // on a button activates it. (Left trigger on empty space also toggles.)
     for (let i = 0; i < controllerSources.length; i++) {
       const source = controllerSources[i];
       if (!source) continue;
       const sel = source.selectPressed;
       const justPressed = sel && !prevSelect[i];
       prevSelect[i] = sel;
+      const menuPressed = source.menuPressed;
+      const menuJustPressed = menuPressed && !prevMenu[i];
+      prevMenu[i] = menuPressed;
 
       const hovered = vrMenu.isOpen ? vrMenu.actionFor(source.castBeam(vrMenu.buttonMeshes)?.object ?? null) : null;
       if (vrMenu.isOpen) vrMenu.setHovered(hovered);
 
+      if (menuJustPressed && i === 0) {
+        vrMenu.isOpen ? vrMenu.close() : vrMenu.open(camera);
+      }
       if (justPressed) {
         if (vrMenu.isOpen) {
           if (hovered !== null) {
             activateMenu(hovered);
           } else if (i === 0) {
-            // left controller, beam in empty space → close the menu
             vrMenu.close();
           }
         } else if (i === 0 && source.beamCubie === null) {
