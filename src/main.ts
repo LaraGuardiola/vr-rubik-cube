@@ -39,7 +39,7 @@ const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerH
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x050510);
 
-console.log('VR Rubik\'s Cube loaded'); // harmless; used to trigger deployments
+console.log('VR Rubik\'s Cube loaded — build v2'); // harmless; used to trigger deployments
 
 const skybox = new NebulaSkybox();
 scene.add(skybox);
