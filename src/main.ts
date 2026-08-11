@@ -149,9 +149,17 @@ function attachInputSources(): void {
     if (!grip.parent) scene.add(grip);
     if (!ray.parent) scene.add(ray);
     if (controllerSources[i] === undefined) {
-      const source = new ControllerSource(grip, ray, cube);
+      const source = new ControllerSource(grip, ray, cube, i === 0 ? 'left' : 'right');
       controllerSources[i] = source;
       xrControls.attach(source);
+    }
+  }
+  // bind the controller sources to the current session so they can read the
+  // gamepad (thumbstick) and ☰ button
+  const session = renderer.xr.getSession();
+  if (session) {
+    for (const source of controllerSources) {
+      if (source) source.bindToSession(session);
     }
   }
 }
@@ -313,4 +321,5 @@ Object.assign(window, {
   __camera: camera,
   __scene: scene,
   __desktop: desktopControls,
+  __controllers: controllerSources,
 });

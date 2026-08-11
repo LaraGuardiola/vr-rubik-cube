@@ -65,7 +65,25 @@ export class ControllerSource implements PinchSource {
   private stickX = 0;
   private stickY = 0;
 
-  constructor(grip: THREE.Group, ray: THREE.Group, private cube: RubiksCube) {
+  /**
+   * Find this controller's XR input source by handedness and keep it updated
+   * via the session's inputsourceschange event. Safe one-time setup per session
+   * (no per-frame work). Needed for the thumbstick + ☰ menu button reads.
+   */
+  bindToSession(session: XRSession | null): void {
+    if (!session) return;
+    const find = (): void => {
+      const found = (session.inputSources as XRInputSource[]).find((s) => s.handedness === this.handedness);
+      if (found) {
+        this.inputSource = found;
+        console.log(`[vr-cube] ${this.handedness} controller bound (gamepad: ${found.gamepad ? 'yes' : 'no'})`);
+      }
+    };
+    find();
+    session.addEventListener('inputsourceschange', find);
+  }
+
+  constructor(grip: THREE.Group, ray: THREE.Group, private cube: RubiksCube, private handedness: 'left' | 'right') {
     this.grip = grip;
     this.ray = ray;
 
