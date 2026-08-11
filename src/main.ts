@@ -212,16 +212,14 @@ renderer.setAnimationLoop((time) => {
   const dt = lastTime === 0 ? 0.016 : (time - lastTime) / 1000;
   lastTime = time;
   skybox.update(time * 0.001);
-  cube.update(dt);
-  desktopControls.update();
-  skybox.update(time * 0.001);
-  cube.update(dt);
-  desktopControls.update();
 
-  // outline the face/slice currently being turned (so you can see the axis)
+  // outline the face/slice currently being turned (so you can see the axis);
+  // shown before update() so the frame rotates with the slice as it turns
   const activeSlice = cube.currentSlice();
   if (activeSlice) cube.showSliceOutline(activeSlice.axis, activeSlice.layer);
   else cube.hideSliceOutline();
+  cube.update(dt);
+  desktopControls.update();
 
   if (renderer.xr.isPresenting) {
     xrControls.update(dt);
