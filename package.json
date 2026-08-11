@@ -1,0 +1,29 @@
+{
+  "name": "vr-rubik-cube",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "WebXR Rubik's Cube — hand-tracked VR (AR-preferred) with a desktop mouse/touch fallback. Procedurally generated everything.",
+  "scripts": {
+    "dev": "vite",
+    "dev:host": "vite --host",
+    "dev:https": "vite --config vite.config.https.ts",
+    "dev:host:https": "vite --config vite.config.https.ts --host",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "smoke": "bun run scripts/smoke.ts",
+    "browser:smoke": "bun run scripts/browserSmoke.ts",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "@types/three": "^0.185.4",
+    "@vitejs/plugin-basic-ssl": "^2.3.0",
+    "pngjs": "^7.0.0",
+    "puppeteer-core": "^25.5.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.1"
+  }
+}
